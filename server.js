@@ -38,7 +38,8 @@ function getLocalIpAddress() {
 }
 
 const localIp = getLocalIpAddress();
-const serverUrl = `http://${localIp}:${PORT}`;
+// 외부 공개 URL 환경변수(PUBLIC_URL)가 있으면 우선 적용 (클라우드 배포 및 터널 지원)
+const serverUrl = process.env.PUBLIC_URL || `http://${localIp}:${PORT}`;
 let qrCodeDataUrl = '';
 
 // 서버 시작 시 QR 코드 생성

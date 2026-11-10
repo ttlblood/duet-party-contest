@@ -278,6 +278,16 @@ const createRoomForm = document.getElementById('create-room-form');
 const newContestTitle = document.getElementById('new-contest-title');
 const newHostName = document.getElementById('new-host-name');
 
+// 노래방 채점 방식 전용 DOM 요소
+const requestScoreBox = document.getElementById('request-score-box');
+const karaokeScoreActionBox = document.getElementById('karaoke-score-action-box');
+const karaokeAuthorizedBox = document.getElementById('karaoke-authorized-box');
+const karaokeAudienceWaitBox = document.getElementById('karaoke-audience-wait-box');
+const karaokeScoreInput = document.getElementById('karaoke-score-input');
+const karaokeSubmitBtn = document.getElementById('karaoke-submit-btn');
+const karaokeEditBox = document.getElementById('karaoke-edit-box');
+const karaokeEditBtn = document.getElementById('karaoke-edit-btn');
+
 const nicknameModal = document.getElementById('nickname-modal');
 const nicknameForm = document.getElementById('nickname-form');
 const nicknameInput = document.getElementById('nickname-input');
@@ -423,6 +433,16 @@ createRoomCloseBtn.addEventListener('click', () => {
   createRoomModal.style.display = 'none';
 });
 
+// 방 개설 모달: 채점 방식 라디오 카드 클릭 인터랙션
+document.querySelectorAll('.scoring-mode-selector .mode-card').forEach(card => {
+  card.addEventListener('click', () => {
+    document.querySelectorAll('.scoring-mode-selector .mode-card').forEach(c => c.classList.remove('active'));
+    card.classList.add('active');
+    const radio = card.querySelector('input[type="radio"]');
+    if (radio) radio.checked = true;
+  });
+});
+
 // 대회 열기 폼 제출
 createRoomForm.addEventListener('submit', (e) => {
   e.preventDefault();
@@ -436,7 +456,11 @@ createRoomForm.addEventListener('submit', (e) => {
     return;
   }
 
-  socket.emit('create_room', { title, hostName: host }, (res) => {
+  // 선택된 채점 방식 확인 (기본값: MEMBER)
+  const selectedModeInput = document.querySelector('input[name="scoring-mode"]:checked');
+  const scoringMode = selectedModeInput ? selectedModeInput.value : 'MEMBER';
+
+  socket.emit('create_room', { title, hostName: host, scoringMode }, (res) => {
     if (!res || !res.success) {
       showToast('대회 방 생성에 실패했습니다.');
       return;
@@ -644,6 +668,60 @@ requestScoreBtn.addEventListener('click', () => {
     socket.emit('request_score');
   }
 });
+
+// 노래방 채점 방식: 노래방 기계 점수 직접 등록 버튼
+if (karaokeSubmitBtn) {
+  karaokeSubmitBtn.addEventListener('click', () => {
+    const rawVal = karaokeScoreInput.value.trim();
+    if (!rawVal) {
+      showToast('노래방 기계 점수를 입력해 주세요.');
+      karaokeScoreInput.focus();
+      return;
+    }
+    const scoreNum = parseFloat(rawVal);
+    if (isNaN(scoreNum) || scoreNum < 0 || scoreNum > 100) {
+      showToast('점수는 0점에서 100점 사이로 입력해 주세요.');
+      karaokeScoreInput.focus();
+      return;
+    }
+
+    playClickSound();
+
+    let targetTeamId = null;
+    if (latestRoomState && latestRoomState.teams) {
+      if (localViewingTeamIndex !== null && latestRoomState.teams[localViewingTeamIndex]) {
+        targetTeamId = latestRoomState.teams[localViewingTeamIndex].id;
+      } else if (latestRoomState.teams[latestRoomState.currentTeamIndex]) {
+        targetTeamId = latestRoomState.teams[latestRoomState.currentTeamIndex].id;
+      }
+    }
+
+    showToast('💾 노래방 점수를 저장하는 중...');
+    socket.emit('submit_karaoke_score', { teamId: targetTeamId, score: scoreNum });
+  });
+}
+
+// 노래방 채점 방식: 오입력 대비 점수 수정 버튼
+if (karaokeEditBtn) {
+  karaokeEditBtn.addEventListener('click', () => {
+    playClickSound();
+    const viewingTeam = (latestRoomState && latestRoomState.teams && localViewingTeamIndex !== null)
+      ? latestRoomState.teams[localViewingTeamIndex]
+      : (latestRoomState && latestRoomState.teams ? latestRoomState.teams[latestRoomState.currentTeamIndex] : null);
+
+    if (viewingTeam) {
+      // 기존 점수를 입력창에 채워넣고 수정 폼 노출
+      karaokeScoreInput.value = viewingTeam.avgScore !== null ? viewingTeam.avgScore : '';
+      stageResultBox.style.display = 'none';
+      karaokeScoreActionBox.style.display = 'block';
+      karaokeAuthorizedBox.style.display = 'block';
+      karaokeAudienceWaitBox.style.display = 'none';
+      karaokeScoreInput.focus();
+      karaokeScoreInput.select();
+      showToast('✏️ 수정할 점수를 입력한 뒤 점수 등록하기를 눌러주세요.');
+    }
+  });
+}
 
 // 관객의 1~10점 선택
 scoreButtons.forEach(btn => {
@@ -960,8 +1038,10 @@ function renderContestStage(teams, officialTeamIndex, gameStatus) {
       if (isOfficialCurrent && !isSelectedByMe) chip.classList.add('active-stage');
 
       let badgeHtml = '';
+      const isKaraokeMode = (latestRoomState && latestRoomState.scoringMode === 'KARAOKE');
       if (isScored) {
-        badgeHtml = `<span class="chip-status-badge chip-status-scored">✅ ${Math.floor(t.avgScore)}.??점</span>`;
+        const scoreDisplay = isKaraokeMode ? `${t.avgScore}점` : `${Math.floor(t.avgScore)}.??점`;
+        badgeHtml = `<span class="chip-status-badge chip-status-scored">✅ ${scoreDisplay}</span>`;
         if (isOfficialCurrent) {
           badgeHtml += ' <span class="chip-status-badge chip-status-current">방금 무대</span>';
         }
@@ -999,48 +1079,83 @@ function renderContestStage(teams, officialTeamIndex, gameStatus) {
     });
   }
 
-  // 3. 점수 받기 버튼 상태 및 권한 제어
-  // [사용자 요구 반영]: "채점이 끝난 경우는 방장만 점수 다시받기 누를 수 있고, 팀원은 비활성화되어야해. 태점이 끝났다고 나와야해."
-  const authStarterBox = document.getElementById('authorized-score-starter-box');
-  const audienceWaitScoreBox = document.getElementById('audience-wait-score-box');
-  const actionDesc = authStarterBox ? authStarterBox.querySelector('.action-desc') : null;
+  // 3. 점수 받기 / 노래방 점수 입력 제어 (모드별 분기)
+  const isKaraokeMode = (latestRoomState && latestRoomState.scoringMode === 'KARAOKE');
 
-  if (authStarterBox) authStarterBox.style.display = 'block';
-  if (audienceWaitScoreBox) audienceWaitScoreBox.style.display = 'none';
+  if (isKaraokeMode) {
+    // ------------------------------------------------------------------
+    // [모드 2: 노래방 채점 방식]
+    // ------------------------------------------------------------------
+    if (requestScoreBox) requestScoreBox.style.display = 'none';
+    if (scoringPanel) scoringPanel.style.display = 'none';
 
-  if (isViewingScored) {
-    // ------------------------------------------------------------------
-    // A. 이미 채점이 완료된 팀을 보고 있는 경우
-    // ------------------------------------------------------------------
-    if (isHost) {
-      // 관리자(방장): 점수 다시 받기(재채점) 가능
-      requestScoreBtn.disabled = false;
-      requestScoreBtn.className = 'btn btn-re-score btn-pulse btn-large';
-      requestScoreBtn.innerHTML = '🔄 점수 다시 받기 (방장 재채점)';
-      if (actionDesc) actionDesc.textContent = '💡 이미 채점이 완료된 팀입니다. 방장 권한으로 점수를 다시 받을 수 있습니다.';
+    if (isViewingScored) {
+      // 이미 점수 입력 완료된 팀
+      if (karaokeScoreActionBox) karaokeScoreActionBox.style.display = 'none';
+      if (stageResultBox) stageResultBox.style.display = 'block';
+      if (maskedScoreText) maskedScoreText.textContent = viewingTeam.avgScore;
+      if (scoreHintText) scoreHintText.textContent = '🎉 노래방 기계 채점 완료!';
+
+      // 해당 팀원 또는 관리자(방장): 오입력 대비 점수 수정 버튼 제공
+      if (karaokeEditBox) {
+        karaokeEditBox.style.display = (isPerformer || isHost) ? 'block' : 'none';
+      }
     } else {
-      // 팀원 및 일반 관객: 버튼 비활성화 및 "채점이 끝났습니다" 표시
-      requestScoreBtn.disabled = true;
-      requestScoreBtn.className = 'btn btn-disabled btn-large';
-      requestScoreBtn.innerHTML = '✅ 채점이 끝났습니다';
-      if (actionDesc) actionDesc.textContent = '이 팀의 무대 채점이 이미 완료되었습니다. (재채점은 방장만 가능)';
+      // 아직 점수 미입력 대기 무대
+      if (stageResultBox) stageResultBox.style.display = 'none';
+      if (karaokeScoreActionBox) karaokeScoreActionBox.style.display = 'block';
+      if (karaokeEditBox) karaokeEditBox.style.display = 'none';
+
+      if (isPerformer || isHost) {
+        // 팀원 또는 방장: 점수 입력창 및 등록 버튼 노출
+        if (karaokeAuthorizedBox) karaokeAuthorizedBox.style.display = 'block';
+        if (karaokeAudienceWaitBox) karaokeAudienceWaitBox.style.display = 'none';
+        if (karaokeScoreInput) karaokeScoreInput.value = '';
+      } else {
+        // 일반 관객: 대기 안내
+        if (karaokeAuthorizedBox) karaokeAuthorizedBox.style.display = 'none';
+        if (karaokeAudienceWaitBox) karaokeAudienceWaitBox.style.display = 'block';
+      }
     }
   } else {
     // ------------------------------------------------------------------
-    // B. 아직 채점이 진행되지 않은 대기 팀을 보고 있는 경우
+    // [모드 1: 멤버 채점 방식 (기존)]
     // ------------------------------------------------------------------
-    if (isPerformer || isHost) {
-      // 해당 팀원 또는 방장: 점수 받기 시작 버튼 활성화
-      requestScoreBtn.disabled = false;
-      requestScoreBtn.className = 'btn btn-party btn-pulse btn-large';
-      requestScoreBtn.innerHTML = '📢 노래 끝! 점수 받기 시작! (30초)';
-      if (actionDesc) actionDesc.textContent = '노래가 끝났나요? 팀원 또는 방장이 [점수 받기]를 눌러주세요!';
+    if (karaokeScoreActionBox) karaokeScoreActionBox.style.display = 'none';
+    if (karaokeEditBox) karaokeEditBox.style.display = 'none';
+    if (requestScoreBox) requestScoreBox.style.display = 'block';
+
+    const authStarterBox = document.getElementById('authorized-score-starter-box');
+    const audienceWaitScoreBox = document.getElementById('audience-wait-score-box');
+    const actionDesc = authStarterBox ? authStarterBox.querySelector('.action-desc') : null;
+
+    if (authStarterBox) authStarterBox.style.display = 'block';
+    if (audienceWaitScoreBox) audienceWaitScoreBox.style.display = 'none';
+
+    if (isViewingScored) {
+      if (isHost) {
+        requestScoreBtn.disabled = false;
+        requestScoreBtn.className = 'btn btn-re-score btn-pulse btn-large';
+        requestScoreBtn.innerHTML = '🔄 점수 다시 받기 (방장 재채점)';
+        if (actionDesc) actionDesc.textContent = '💡 이미 채점이 완료된 팀입니다. 방장 권한으로 점수를 다시 받을 수 있습니다.';
+      } else {
+        requestScoreBtn.disabled = true;
+        requestScoreBtn.className = 'btn btn-disabled btn-large';
+        requestScoreBtn.innerHTML = '✅ 채점이 끝났습니다';
+        if (actionDesc) actionDesc.textContent = '이 팀의 무대 채점이 이미 완료되었습니다. (재채점은 방장만 가능)';
+      }
     } else {
-      // 일반 관객: 대기 상태
-      requestScoreBtn.disabled = true;
-      requestScoreBtn.className = 'btn btn-disabled btn-large';
-      requestScoreBtn.innerHTML = '🎵 노래 진행 중 (대기)';
-      if (actionDesc) actionDesc.textContent = '노래가 끝난 후 팀원 또는 방장이 [점수 받기]를 누르면 채점이 시작됩니다!';
+      if (isPerformer || isHost) {
+        requestScoreBtn.disabled = false;
+        requestScoreBtn.className = 'btn btn-party btn-pulse btn-large';
+        requestScoreBtn.innerHTML = '📢 노래 끝! 점수 받기 시작! (30초)';
+        if (actionDesc) actionDesc.textContent = '노래가 끝났나요? 팀원 또는 방장이 [점수 받기]를 눌러주세요!';
+      } else {
+        requestScoreBtn.disabled = true;
+        requestScoreBtn.className = 'btn btn-disabled btn-large';
+        requestScoreBtn.innerHTML = '🎵 노래 진행 중 (대기)';
+        if (actionDesc) actionDesc.textContent = '노래가 끝난 후 팀원 또는 방장이 [점수 받기]를 누르면 채점이 시작됩니다!';
+      }
     }
   }
 
@@ -1076,7 +1191,7 @@ function renderContestStage(teams, officialTeamIndex, gameStatus) {
       scoringPanel.style.display = 'none';
       stageResultBox.style.display = 'block';
       if (maskedScoreText) {
-        maskedScoreText.textContent = `${Math.floor(viewingTeam.avgScore)}.??`;
+        maskedScoreText.textContent = isKaraokeMode ? viewingTeam.avgScore : `${Math.floor(viewingTeam.avgScore)}.??`;
       }
 
       if (allTeamsFinished) {
@@ -1108,6 +1223,12 @@ function renderContestStage(teams, officialTeamIndex, gameStatus) {
 }
 
 function renderFinalResults(teams) {
+  const isKaraokeMode = (latestRoomState && latestRoomState.scoringMode === 'KARAOKE');
+  const formatScore = (s) => {
+    if (s === null || s === undefined) return isKaraokeMode ? '0점' : '0.00점';
+    return isKaraokeMode ? `${s}점` : `${s.toFixed(2)}점`;
+  };
+
   const sortedTeams = [...teams].sort((a, b) => (b.avgScore || 0) - (a.avgScore || 0));
 
   podiumContainer.innerHTML = '';
@@ -1123,7 +1244,7 @@ function renderFinalResults(teams) {
       <div class="podium-card">
         <div class="podium-rank-badge">${medalIcon}</div>
         <div class="podium-team-name">${team.member1} & ${team.member2}</div>
-        <div class="podium-score">${team.avgScore ? team.avgScore.toFixed(2) : '0.00'}점</div>
+        <div class="podium-score">${formatScore(team.avgScore)}</div>
       </div>
       <div class="podium-step">${rank}위</div>
     `;
@@ -1141,7 +1262,7 @@ function renderFinalResults(teams) {
         <div class="rank-members">${team.member1} & ${team.member2}</div>
         <div class="rank-song">🎵 ${team.songTitle}</div>
       </div>
-      <div class="rank-final-score">${team.avgScore ? team.avgScore.toFixed(2) : '0.00'}점</div>
+      <div class="rank-final-score">${formatScore(team.avgScore)}</div>
     `;
     fullRankingList.appendChild(row);
   });

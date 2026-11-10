@@ -218,7 +218,7 @@
             <span id="current-team-song" class="song-name">그 남자 그 여자</span>
           </div>
 
-          <!-- 노래 부른 뒤 해당 팀원 또는 관리자가 누르는 점수 받기 버튼 -->
+          <!-- [방식 1: 멤버 채점 방식 전용] 노래 부른 뒤 해당 팀원 또는 관리자가 누르는 점수 받기 버튼 -->
           <div id="request-score-box" class="action-box">
             <!-- 팀원 또는 관리자에게만 노출되는 점수 받기 영역 -->
             <div id="authorized-score-starter-box">
@@ -231,6 +231,26 @@
             <!-- 일반 관객에게 노출되는 대기 안내 영역 -->
             <div id="audience-wait-score-box" class="audience-wait-box" style="display: none;">
               <p class="wait-desc">🎵 듀엣 무대가 진행 중입니다.<br>노래가 끝난 후 팀원 또는 방장이 [점수 받기]를 누르면 채점이 시작됩니다!</p>
+            </div>
+          </div>
+
+          <!-- [방식 2: 노래방 채점 방식 전용] 노래방 기계 점수 직접 입력 영역 -->
+          <div id="karaoke-score-action-box" class="action-box" style="display: none;">
+            <!-- 팀원 또는 관리자에게 노출되는 점수 입력 영역 -->
+            <div id="karaoke-authorized-box">
+              <p id="karaoke-action-desc" class="action-desc">노래가 끝났나요? 노래방 기계 화면의 점수를 입력해 주세요!</p>
+              <div class="karaoke-input-group">
+                <input type="number" id="karaoke-score-input" class="karaoke-score-input" placeholder="0~100" min="0" max="100" step="1">
+                <span class="karaoke-unit">점</span>
+                <button id="karaoke-submit-btn" class="btn btn-party btn-large">
+                  💾 점수 등록하기
+                </button>
+              </div>
+            </div>
+
+            <!-- 일반 관객에게 노출되는 대기 안내 영역 -->
+            <div id="karaoke-audience-wait-box" class="audience-wait-box" style="display: none;">
+              <p class="wait-desc">🎵 듀엣 무대가 진행 중입니다.<br>노래가 끝난 후 팀원 또는 방장이 노래방 기계 점수를 입력합니다.</p>
             </div>
           </div>
         </div>
@@ -310,6 +330,12 @@
             <p id="score-hint-text" class="score-hint">
               🤫 전체 팀이 끝나지 않아 소수점은 비밀입니다!
             </p>
+            <!-- 노래방 채점 방식 전용 점수 수정 버튼 (오입력 대비) -->
+            <div id="karaoke-edit-box" style="display: none; margin-top: 14px;">
+              <button id="karaoke-edit-btn" class="btn btn-outline btn-small">
+                ✏️ 노래방 점수 수정하기
+              </button>
+            </div>
           </div>
           <!-- 다음 팀 무대로 넘어가기 또는 최종 결과 확인 -->
           <div class="stage-nav-actions">
@@ -386,6 +412,21 @@
         <div class="form-group" style="text-align: left;">
           <label>관리자(방장) 닉네임</label>
           <input type="text" id="new-host-name" placeholder="본인 닉네임 입력 (예: 지민)" required maxlength="12">
+        </div>
+        <div class="form-group" style="text-align: left;">
+          <label>채점 방식 선택</label>
+          <div class="scoring-mode-selector">
+            <label class="mode-card active" id="mode-card-member">
+              <input type="radio" name="scoring-mode" value="MEMBER" checked>
+              <div class="mode-badge">👥 1. 멤버 채점 방식</div>
+              <div class="mode-sub">관객들이 30초 동안 1~10점 실시간 익명 투표</div>
+            </label>
+            <label class="mode-card" id="mode-card-karaoke">
+              <input type="radio" name="scoring-mode" value="KARAOKE">
+              <div class="mode-badge">🔢 2. 노래방 채점 방식</div>
+              <div class="mode-sub">노래방 기계 점수(0~100점)를 팀원/방장이 직접 입력 (수정 가능)</div>
+            </label>
+          </div>
         </div>
         <button type="submit" class="btn btn-party btn-block btn-large">
           🚀 대회 개설하고 방 만들기

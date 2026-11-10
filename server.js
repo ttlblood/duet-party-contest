@@ -112,6 +112,7 @@ function broadcastRoomState(roomCode) {
     roomCode: room.id,
     title: room.title,
     hostName: room.hostName,
+    scoringMode: room.scoringMode || 'MEMBER', // 채점 모드 (MEMBER 또는 KARAOKE)
     users: Object.values(room.users),
     teams: room.teams,
     currentTeamIndex: room.currentTeamIndex,
@@ -194,7 +195,7 @@ function getDefaultContestTitle() {
 io.on('connection', (socket) => {
 
   // 1. 새 듀엣 대회 방 생성 (개설자가 관리자가 됨)
-  socket.on('create_room', async ({ title, hostName }, callback) => {
+  socket.on('create_room', async ({ title, hostName, scoringMode }, callback) => {
     const trimmedTitle = (title || getDefaultContestTitle()).trim();
     const trimmedHostName = (hostName || '관리자').trim();
 
@@ -206,6 +207,7 @@ io.on('connection', (socket) => {
 
     const adminToken = crypto.randomUUID();
     const qrData = await generateRoomQRCode(roomCode);
+    const chosenScoringMode = (scoringMode === 'KARAOKE') ? 'KARAOKE' : 'MEMBER';
 
     // 새 방 초기화
     rooms[roomCode] = {
@@ -213,6 +215,7 @@ io.on('connection', (socket) => {
       title: trimmedTitle,
       hostName: trimmedHostName,
       adminToken: adminToken,
+      scoringMode: chosenScoringMode, // 채점 방식 (MEMBER 또는 KARAOKE)
       users: {},
       teams: [],
       currentTeamIndex: 0,
@@ -243,7 +246,8 @@ io.on('connection', (socket) => {
         roomCode,
         adminToken,
         title: trimmedTitle,
-        hostName: trimmedHostName
+        hostName: trimmedHostName,
+        scoringMode: chosenScoringMode
       });
     }
 
@@ -527,6 +531,72 @@ io.on('connection', (socket) => {
     } else {
       broadcastRoomState(roomCode);
     }
+  });
+
+  // 8-1. 노래방 채점 방식: 노래방 기계 점수 직접 등록 및 수정 (팀원 또는 방장 전용)
+  socket.on('submit_karaoke_score', ({ teamId, score }) => {
+    const roomCode = socketRoomMap[socket.id];
+    const room = rooms[roomCode];
+    if (!room || room.gameStatus !== 'CONTEST') {
+      return socket.emit('error_message', '점수를 입력할 수 있는 상태가 아닙니다.');
+    }
+
+    // 대상 팀 인덱스 찾기
+    let targetIndex = room.currentTeamIndex;
+    if (teamId) {
+      const foundIdx = room.teams.findIndex(t => t.id === teamId);
+      if (foundIdx !== -1) targetIndex = foundIdx;
+    }
+
+    const currentTeam = room.teams[targetIndex];
+    if (!currentTeam) {
+      return socket.emit('error_message', '무대 팀 정보를 찾을 수 없습니다.');
+    }
+
+    const currentUser = room.users[socket.id];
+    if (!currentUser) {
+      return socket.emit('error_message', '사용자 인증 정보가 유실되었습니다.');
+    }
+
+    const userName = (currentUser.name || '').trim();
+    const m1 = (currentTeam.member1 || '').trim();
+    const m2 = (currentTeam.member2 || '').trim();
+    const isPerformer = (userName === m1 || userName === m2);
+    const isHost = !!currentUser.isHost;
+
+    // 권한 검증: 해당 팀원 또는 방장만 점수 입력 및 수정 가능
+    if (!isPerformer && !isHost) {
+      return socket.emit('error_message', '노래방 점수 입력 및 수정은 해당 팀원 또는 관리자(방장)만 가능합니다.');
+    }
+
+    // 점수 숫자 유효성 검증 (0점 ~ 100점)
+    const numScore = parseFloat(score);
+    if (isNaN(numScore) || numScore < 0 || numScore > 100) {
+      return socket.emit('error_message', '점수는 0점에서 100점 사이의 숫자로 입력해 주세요.');
+    }
+
+    // 점수 저장 및 상태 업데이트
+    currentTeam.avgScore = parseFloat(numScore.toFixed(1));
+    currentTeam.rawScores = { [currentUser.id || socket.id]: currentTeam.avgScore };
+    currentTeam.status = 'scored';
+    room.currentTeamIndex = targetIndex;
+
+    const allTeamsFinished = room.teams.every(t => t.status === 'scored');
+
+    console.log(`[노래방 점수 입력] 방:${roomCode}, 팀:${m1}&${m2}, 점수:${currentTeam.avgScore}점, 입력자:${userName}`);
+
+    io.to(roomCode).emit('score_revealed', {
+      teamId: currentTeam.id,
+      teamName: `${currentTeam.member1} & ${currentTeam.member2}`,
+      songTitle: currentTeam.songTitle,
+      rawScores: currentTeam.rawScores,
+      avgScore: currentTeam.avgScore,
+      integerPart: Math.floor(currentTeam.avgScore),
+      allTeamsFinished,
+      isKaraoke: true
+    });
+
+    broadcastRoomState(roomCode);
   });
 
   // 9. 다음 팀 무대로

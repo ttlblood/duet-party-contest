@@ -1560,3 +1560,38 @@ body.is-host .guest-wait-box {
   0% { transform: translateY(0); opacity: 0.8; }
   100% { transform: translateY(-3px); opacity: 1; }
 }
+
+/* ================================================= */
+/* 비활성화 버튼 및 방장 재채점 전용 스타일 */
+/* ================================================= */
+.btn-disabled {
+  background: rgba(255, 255, 255, 0.08) !important;
+  color: rgba(255, 255, 255, 0.45) !important;
+  border: 1px solid rgba(255, 255, 255, 0.15) !important;
+  cursor: not-allowed !important;
+  box-shadow: none !important;
+  transform: none !important;
+  opacity: 0.65;
+}
+
+/* 방장 전용 재채점(점수 다시 받기) 버튼 스타일 */
+.btn-re-score {
+  background: linear-gradient(135deg, #ff9f1c, #ff4081) !important;
+  border: 1px solid #ff9f1c !important;
+  box-shadow: 0 0 16px rgba(255, 159, 28, 0.6) !important;
+  color: #fff !important;
+}
+
+/* 사용자 본인이 현재 선택해서 둘러보고 있는 팀 칩 스타일 */
+.stage-team-chip.viewing-stage {
+  border: 2px solid var(--neon-pink) !important;
+  background: rgba(255, 42, 133, 0.15) !important;
+  box-shadow: 0 0 15px rgba(255, 42, 133, 0.35);
+}
+
+.chip-status-viewing {
+  background: rgba(255, 42, 133, 0.25);
+  color: var(--neon-pink);
+  border: 1px solid var(--neon-pink);
+  font-weight: 700;
+}

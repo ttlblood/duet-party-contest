@@ -15,6 +15,8 @@ let currentGameState = null;
 let isSoundEnabled = true;
 let hasSubmittedScore = false;
 let mySelectedScore = null;
+let localViewingTeamIndex = null; // 각 사용자가 개별적으로 탭해서 둘러보는 팀 인덱스 (다른 사람 화면에 영향 없음)
+let latestRoomState = null;        // 서버에서 수신한 최신 방 상태 캐시
 
 // =======================================================
 // [1] Web Audio API 기반 파티 사운드 합성기
@@ -568,10 +570,21 @@ resetContestBtn.addEventListener('click', () => {
 // [10] 무대 및 채점 인터랙션
 // =======================================================
 
-// 해당 팀원의 [점수 받기] 클릭
+// 해당 팀원 또는 방장의 [점수 받기] / [점수 다시 받기] 클릭
 requestScoreBtn.addEventListener('click', () => {
+  if (requestScoreBtn.disabled) return;
   playClickSound();
-  socket.emit('request_score');
+
+  // 현재 사용자가 화면에서 보고 있는 팀을 대상으로 점수 받기(또는 방장 재채점) 요청
+  const viewingTeam = (latestRoomState && latestRoomState.teams && localViewingTeamIndex !== null)
+    ? latestRoomState.teams[localViewingTeamIndex]
+    : null;
+
+  if (viewingTeam) {
+    socket.emit('request_score', { teamId: viewingTeam.id });
+  } else {
+    socket.emit('request_score');
+  }
 });
 
 // 관객의 1~10점 선택
@@ -666,6 +679,7 @@ socket.on('error_message', (msg) => {
 // [12] 상태 렌더러 함수
 // =======================================================
 function renderState(data) {
+  latestRoomState = data; // 최신 상태 캐시 보관
   const { users, teams, currentTeamIndex, gameStatus, qrCodeDataUrl, roomUrl, title } = data;
 
   if (title) {
@@ -678,6 +692,7 @@ function renderState(data) {
 
   const me = users.find(u => u.name === myUserName);
   if (me) {
+    setHostMode(!!me.isHost); // 방장 여부 실시간 최신 동기화
     if (me.isReady) {
       readyToggleBtn.classList.add('active-ready');
       readyToggleBtn.textContent = '준비 완료됨 (READY 취소) ✔️';
@@ -685,6 +700,8 @@ function renderState(data) {
       readyToggleBtn.classList.remove('active-ready');
       readyToggleBtn.textContent = '준비 완료 (READY) 👍';
     }
+  } else {
+    setHostMode(false);
   }
 
   // 참가자 태그 렌더링
@@ -710,6 +727,7 @@ function renderState(data) {
     switchView('lobby');
     stageResultBox.style.display = 'none';
     scoringPanel.style.display = 'none';
+    localViewingTeamIndex = null; // 로비 진입 시 로컬 선택 인덱스 초기화
   } else if (gameStatus === 'CONTEST' || gameStatus === 'SCORING') {
     switchView('contest');
     renderContestStage(teams, currentTeamIndex, gameStatus);
@@ -788,15 +806,31 @@ window.deleteTeam = function(teamId) {
   socket.emit('delete_team', { teamId });
 };
 
-function renderContestStage(teams, currentTeamIndex, gameStatus) {
-  const currentTeam = teams[currentTeamIndex];
-  if (!currentTeam) return;
+// 무대 및 채점 화면 렌더러
+function renderContestStage(teams, officialTeamIndex, gameStatus) {
+  if (!teams || teams.length === 0) return;
 
-  currentRoundText.textContent = `STAGE ${currentTeamIndex + 1} / ${teams.length}`;
-  currentTeamMembers.textContent = `${currentTeam.member1} & ${currentTeam.member2}`;
-  currentTeamSong.textContent = currentTeam.songTitle;
+  // 1. 채점이 진행 중(SCORING)일 때는 모든 참가자가 공식 채점 중인 팀으로 강제 동기화
+  if (gameStatus === 'SCORING') {
+    localViewingTeamIndex = officialTeamIndex;
+  } else {
+    // 유효한 인덱스인지 체크하고 없으면 officialTeamIndex로 기본 세팅
+    if (localViewingTeamIndex === null || localViewingTeamIndex >= teams.length || localViewingTeamIndex < 0) {
+      localViewingTeamIndex = officialTeamIndex;
+    }
+  }
 
-  // 1. 출전 팀 목록 칩 렌더링 (순서 자유 변경 지원)
+  // 사용자가 현재 화면에서 확인 중인 팀
+  const viewingTeam = teams[localViewingTeamIndex] || teams[0];
+  const isViewingScored = (viewingTeam.status === 'scored');
+  const isPerformer = (myUserName === viewingTeam.member1 || myUserName === viewingTeam.member2);
+
+  // 상단 STAGE 라운드 텍스트 및 현재 보고 있는 팀 정보 반영
+  currentRoundText.textContent = `STAGE ${localViewingTeamIndex + 1} / ${teams.length}`;
+  currentTeamMembers.textContent = `${viewingTeam.member1} & ${viewingTeam.member2}`;
+  currentTeamSong.textContent = viewingTeam.songTitle;
+
+  // 2. 출전 팀 목록 칩 렌더링 (순서 자유 확인 지원)
   const stageTeamChips = document.getElementById('stage-team-chips');
   const stageCompletedCount = document.getElementById('stage-completed-count');
   const stageTotalCount = document.getElementById('stage-total-count');
@@ -810,18 +844,24 @@ function renderContestStage(teams, currentTeamIndex, gameStatus) {
     teams.forEach((t, idx) => {
       const chip = document.createElement('div');
       chip.className = 'stage-team-chip';
-      const isCurrent = (idx === currentTeamIndex);
+      const isOfficialCurrent = (idx === officialTeamIndex);
+      const isSelectedByMe = (idx === localViewingTeamIndex);
       const isScored = (t.status === 'scored');
 
-      if (isCurrent) chip.classList.add('active-stage');
+      if (isSelectedByMe) chip.classList.add('viewing-stage');
+      if (isOfficialCurrent && !isSelectedByMe) chip.classList.add('active-stage');
 
       let badgeHtml = '';
-      if (isCurrent) {
-        badgeHtml = '<span class="chip-status-badge chip-status-current">🎤 지금 무대</span>';
+      if (isOfficialCurrent) {
+        badgeHtml = '<span class="chip-status-badge chip-status-current">🎤 공식 무대</span>';
       } else if (isScored) {
         badgeHtml = `<span class="chip-status-badge chip-status-scored">✅ ${Math.floor(t.avgScore)}.??점</span>`;
       } else {
-        badgeHtml = '<span class="chip-status-badge chip-status-waiting">대기 중 (선택 가능)</span>';
+        badgeHtml = '<span class="chip-status-badge chip-status-waiting">대기 중</span>';
+      }
+
+      if (isSelectedByMe && !isOfficialCurrent) {
+        badgeHtml += ' <span class="chip-status-badge chip-status-viewing">👀 확인 중</span>';
       }
 
       chip.innerHTML = `
@@ -829,40 +869,71 @@ function renderContestStage(teams, currentTeamIndex, gameStatus) {
           <div class="chip-names">${idx + 1}팀: ${t.member1} & ${t.member2}</div>
           <div class="chip-song">🎵 ${t.songTitle}</div>
         </div>
-        ${badgeHtml}
+        <div>${badgeHtml}</div>
       `;
 
-      // 칩 탭/클릭 시 해당 팀 무대로 전환!
+      // [사용자 요구 반영] 칩 탭 시: 다른 사람 선택을 변경하지 않고, 오직 '내 화면'에서만 해당 팀을 확인하도록 로컬 갱신!
       chip.addEventListener('click', () => {
         if (gameStatus === 'SCORING') {
-          showToast('채점이 진행 중일 때는 무대를 변경할 수 없습니다.');
+          showToast('채점이 진행 중일 때는 다른 팀을 확인할 수 없습니다.');
           return;
         }
         playClickSound();
-        socket.emit('select_stage_team', { teamId: t.id });
-        showToast(`[${idx + 1}팀: ${t.member1} & ${t.member2}] 무대로 선택되었습니다.`);
+        localViewingTeamIndex = idx;
+        renderContestStage(teams, officialTeamIndex, gameStatus);
+        showToast(`[${idx + 1}팀: ${t.member1} & ${t.member2}] 무대를 확인 중입니다.`);
       });
 
       stageTeamChips.appendChild(chip);
     });
   }
 
-  const isPerformer = (myUserName === currentTeam.member1 || myUserName === currentTeam.member2);
-  const canStartScoring = isPerformer || isHost;
-
-  // 점수 받기 버튼 권한 제어 (해당 팀원 또는 관리자만 버튼 노출, 일반 관객은 대기 안내 노출)
+  // 3. 점수 받기 버튼 상태 및 권한 제어
+  // [사용자 요구 반영]: "채점이 끝난 경우는 방장만 점수 다시받기 누를 수 있고, 팀원은 비활성화되어야해. 태점이 끝났다고 나와야해."
   const authStarterBox = document.getElementById('authorized-score-starter-box');
   const audienceWaitScoreBox = document.getElementById('audience-wait-score-box');
-  if (authStarterBox && audienceWaitScoreBox) {
-    if (canStartScoring) {
-      authStarterBox.style.display = 'block';
-      audienceWaitScoreBox.style.display = 'none';
+  const actionDesc = authStarterBox ? authStarterBox.querySelector('.action-desc') : null;
+
+  if (authStarterBox) authStarterBox.style.display = 'block';
+  if (audienceWaitScoreBox) audienceWaitScoreBox.style.display = 'none';
+
+  if (isViewingScored) {
+    // ------------------------------------------------------------------
+    // A. 이미 채점이 완료된 팀을 보고 있는 경우
+    // ------------------------------------------------------------------
+    if (isHost) {
+      // 관리자(방장): 점수 다시 받기(재채점) 가능
+      requestScoreBtn.disabled = false;
+      requestScoreBtn.className = 'btn btn-re-score btn-pulse btn-large';
+      requestScoreBtn.innerHTML = '🔄 점수 다시 받기 (방장 재채점)';
+      if (actionDesc) actionDesc.textContent = '💡 이미 채점이 완료된 팀입니다. 방장 권한으로 점수를 다시 받을 수 있습니다.';
     } else {
-      authStarterBox.style.display = 'none';
-      audienceWaitScoreBox.style.display = 'block';
+      // 팀원 및 일반 관객: 버튼 비활성화 및 "채점이 끝났습니다" 표시
+      requestScoreBtn.disabled = true;
+      requestScoreBtn.className = 'btn btn-disabled btn-large';
+      requestScoreBtn.innerHTML = '✅ 채점이 끝났습니다';
+      if (actionDesc) actionDesc.textContent = '이 팀의 무대 채점이 이미 완료되었습니다. (재채점은 방장만 가능)';
+    }
+  } else {
+    // ------------------------------------------------------------------
+    // B. 아직 채점이 진행되지 않은 대기 팀을 보고 있는 경우
+    // ------------------------------------------------------------------
+    if (isPerformer || isHost) {
+      // 해당 팀원 또는 방장: 점수 받기 시작 버튼 활성화
+      requestScoreBtn.disabled = false;
+      requestScoreBtn.className = 'btn btn-party btn-pulse btn-large';
+      requestScoreBtn.innerHTML = '📢 노래 끝! 점수 받기 시작! (30초)';
+      if (actionDesc) actionDesc.textContent = '노래가 끝났나요? 팀원 또는 방장이 [점수 받기]를 눌러주세요!';
+    } else {
+      // 일반 관객: 대기 상태
+      requestScoreBtn.disabled = true;
+      requestScoreBtn.className = 'btn btn-disabled btn-large';
+      requestScoreBtn.innerHTML = '🎵 노래 진행 중 (대기)';
+      if (actionDesc) actionDesc.textContent = '노래가 끝난 후 팀원 또는 방장이 [점수 받기]를 누르면 채점이 시작됩니다!';
     }
   }
 
+  // 4. 채점 패널 및 결과 점수 카드 렌더링
   const chooseHint = document.getElementById('choose-next-hint');
   const allTeamsFinished = teams.every(t => t.status === 'scored');
 
@@ -870,7 +941,11 @@ function renderContestStage(teams, currentTeamIndex, gameStatus) {
     scoringPanel.style.display = 'block';
     stageResultBox.style.display = 'none';
 
-    if (isPerformer) {
+    // 공식 채점 중인 팀의 팀원인지 확인
+    const officialTeam = teams[officialTeamIndex];
+    const isOfficialPerformer = officialTeam && (myUserName === officialTeam.member1 || myUserName === officialTeam.member2);
+
+    if (isOfficialPerformer) {
       performerWaitingView.style.display = 'block';
       audienceScoringView.style.display = 'none';
     } else {
@@ -886,9 +961,12 @@ function renderContestStage(teams, currentTeamIndex, gameStatus) {
     hasSubmittedScore = false;
     mySelectedScore = null;
 
-    if (currentTeam.status === 'scored') {
+    if (isViewingScored) {
       scoringPanel.style.display = 'none';
       stageResultBox.style.display = 'block';
+      if (maskedScoreText) {
+        maskedScoreText.textContent = `${Math.floor(viewingTeam.avgScore)}.??`;
+      }
 
       if (allTeamsFinished) {
         if (chooseHint) chooseHint.style.display = 'none';

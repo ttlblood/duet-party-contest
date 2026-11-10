@@ -341,11 +341,15 @@ io.on('connection', (socket) => {
     broadcastRoomState(roomCode);
   });
 
-  // 6-1. 무대 진행할 팀 선택 (순서 자유 변경)
+  // 6-1. 무대 진행할 팀 선택 (방장 전용 공식 지정 또는 클라이언트 로컬 보기 지원)
   socket.on('select_stage_team', ({ teamId }) => {
     const roomCode = socketRoomMap[socket.id];
     const room = rooms[roomCode];
     if (!room || room.gameStatus !== 'CONTEST') return;
+
+    const user = room.users[socket.id];
+    // 공식 무대 변경은 방장만 전체 브로드캐스트 가능 (일반 멤버의 단순 확인은 클라이언트 로컬에서만 처리)
+    if (!user || !user.isHost) return;
 
     const teamIndex = room.teams.findIndex(t => t.id === teamId);
     if (teamIndex !== -1) {
@@ -354,27 +358,48 @@ io.on('connection', (socket) => {
     }
   });
 
-  // 7. 팀원 또는 관리자의 [점수 받기] 클릭 -> 30초 채점 시작
-  socket.on('request_score', () => {
+  // 7. 팀원 또는 관리자의 [점수 받기] 클릭 -> 30초 채점 시작 (재채점 권한 분기 포함)
+  socket.on('request_score', (data) => {
     const roomCode = socketRoomMap[socket.id];
     const room = rooms[roomCode];
     if (!room || room.gameStatus !== 'CONTEST') return;
 
-    const currentTeam = room.teams[room.currentTeamIndex];
+    // 클라이언트가 지정한 teamId를 찾거나, 없으면 기본 현재 팀 인덱스 사용
+    let targetIndex = room.currentTeamIndex;
+    if (data && data.teamId) {
+      const foundIdx = room.teams.findIndex(t => t.id === data.teamId);
+      if (foundIdx !== -1) targetIndex = foundIdx;
+    }
+
+    const currentTeam = room.teams[targetIndex];
     if (!currentTeam) return;
 
     const currentUser = room.users[socket.id];
     if (!currentUser) return;
 
-    // 해당 팀원 또는 관리자(방장)만 점수 받기 시작 가능
     const isPerformer = (currentUser.name === currentTeam.member1 || currentUser.name === currentTeam.member2);
     const isHost = !!currentUser.isHost;
 
-    if (!isPerformer && !isHost) {
-      return socket.emit('error_message', '점수 받기는 해당 팀원 또는 관리자(방장)만 시작할 수 있습니다.');
+    // [권한 규칙]
+    // 1) 이미 채점이 완료된 팀의 경우 -> 오직 관리자(방장)만 [점수 다시 받기] 가능!
+    if (currentTeam.status === 'scored') {
+      if (!isHost) {
+        return socket.emit('error_message', '이미 채점이 완료된 팀입니다. 점수 다시 받기는 관리자(방장)만 가능합니다.');
+      }
+      // 방장이 재채점을 요청한 경우 기존 점수 데이터 초기화
+      currentTeam.rawScores = {};
+      currentTeam.avgScore = null;
+    } else {
+      // 2) 아직 채점이 진행되지 않은 팀의 경우 -> 해당 팀원 또는 관리자(방장)만 가능
+      if (!isPerformer && !isHost) {
+        return socket.emit('error_message', '점수 받기는 해당 팀원 또는 관리자(방장)만 시작할 수 있습니다.');
+      }
+      currentTeam.rawScores = {};
     }
 
-    currentTeam.rawScores = {};
+    // 해당 팀으로 공식 무대 인덱스 동기화 및 30초 채점 모드 진입
+    room.currentTeamIndex = targetIndex;
+    currentTeam.status = 'scoring';
     room.gameStatus = 'SCORING';
     room.scoringTimeLeft = 30;
 

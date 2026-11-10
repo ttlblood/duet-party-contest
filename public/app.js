@@ -539,7 +539,7 @@ startContestBtn.addEventListener('click', () => {
   socket.emit('start_contest');
 });
 
-// 데모용 가상 참석자 10명 & 4팀 생성 버튼
+// 데모용 가상 참석자 생성 버튼 (실제 운영 배포 모드에서는 UI에서 제거됨)
 if (populateDemoBtn) {
   populateDemoBtn.addEventListener('click', () => {
     playClickSound();

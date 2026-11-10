@@ -46,7 +46,8 @@ function getLocalIpAddress() {
 
 const localIp = getLocalIpAddress();
 // 외부 공개 URL 환경변수(PUBLIC_URL)가 있으면 우선 적용 (Cloudflare Tunnel 및 배포 지원)
-const serverUrl = process.env.PUBLIC_URL || `http://${localIp}:${PORT}`;
+// 외부 공개 주소 (PUBLIC_URL 또는 Render.com 자동 제공 RENDER_EXTERNAL_URL 지원)
+const serverUrl = process.env.PUBLIC_URL || process.env.RENDER_EXTERNAL_URL || `http://${localIp}:${PORT}`;
 
 // 6자리 가독성 높은 영문/숫자 방 코드 생성 함수
 function generateRoomCode() {

@@ -542,11 +542,17 @@ io.on('connection', (socket) => {
     }
   });
 
-  // 10. 결과 확인 10초 역카운트다운 시작
+  // 10. 결과 확인 10초 역카운트다운 시작 (관리자/방장 전용 권한)
   socket.on('start_result_countdown', () => {
     const roomCode = socketRoomMap[socket.id];
     const room = rooms[roomCode];
     if (!room) return;
+
+    const user = room.users[socket.id];
+    // 관리자(방장) 권한 확인
+    if (!user || !user.isHost) {
+      return socket.emit('error_message', '최종 결과 발표는 관리자(방장)만 가능합니다.');
+    }
 
     const allFinished = room.teams.every(t => t.status === 'scored');
     if (!allFinished) {

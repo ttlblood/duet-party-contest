@@ -314,10 +314,12 @@ function setHostMode(isHostUser) {
     document.body.classList.add('is-host');
     hostBadge.style.display = 'inline-flex';
     globalResetBtn.style.display = 'inline-flex';
+    if (resetContestBtn) resetContestBtn.style.display = 'inline-block'; // 시상식 하단 새 대회 리셋 버튼 방장만 노출
   } else {
     document.body.classList.remove('is-host');
     hostBadge.style.display = 'none';
     globalResetBtn.style.display = 'none';
+    if (resetContestBtn) resetContestBtn.style.display = 'none'; // 일반 참가자는 리셋 버튼 숨김
   }
 }
 
@@ -667,8 +669,13 @@ if (nextTeamBtn) {
   });
 }
 
-// 최종 결과 확인하기 버튼 (10초 카운트다운 시작)
+// 최종 결과 확인하기 버튼 (10초 카운트다운 시작 - 방장 전용 권한)
 revealFinalBtn.addEventListener('click', () => {
+  if (!isHost) {
+    showToast('최종 결과 발표는 관리자(방장)만 시작할 수 있습니다.');
+    return;
+  }
+  if (revealFinalBtn.disabled) return;
   playClickSound();
   socket.emit('start_result_countdown');
 });
@@ -713,10 +720,22 @@ socket.on('score_revealed', (result) => {
     if (nextTeamBtn) nextTeamBtn.style.display = 'none';
     revealFinalBtn.style.display = 'none';
   } else {
-    scoreHintText.textContent = '🎉 모든 무대가 끝났습니다! 최종 결과 확인하기를 눌러주세요!';
     if (chooseHint) chooseHint.style.display = 'none';
     if (nextTeamBtn) nextTeamBtn.style.display = 'none';
     revealFinalBtn.style.display = 'block';
+
+    // [권한 분기] 모든 무대 종료 시 최종 결과 발표 버튼: 방장만 활성화, 일반 참가자는 비활성화 및 안내
+    if (isHost) {
+      revealFinalBtn.disabled = false;
+      revealFinalBtn.className = 'btn btn-neon-pink btn-pulse btn-large';
+      revealFinalBtn.innerHTML = '🏆 모든 팀 종료! 최종 결과 확인하기! (방장 전용)';
+      scoreHintText.textContent = '🎉 모든 무대가 끝났습니다! 최종 결과 확인하기를 눌러주세요!';
+    } else {
+      revealFinalBtn.disabled = true;
+      revealFinalBtn.className = 'btn btn-disabled btn-large';
+      revealFinalBtn.innerHTML = '⏳ 방장이 최종 결과 발표를 준비 중입니다...';
+      scoreHintText.textContent = '🎉 모든 무대가 끝났습니다! 방장이 최종 결과를 발표할 때까지 잠시만 기다려주세요.';
+    }
   }
 });
 
@@ -1063,9 +1082,23 @@ function renderContestStage(teams, officialTeamIndex, gameStatus) {
       if (allTeamsFinished) {
         if (chooseHint) chooseHint.style.display = 'none';
         revealFinalBtn.style.display = 'block';
+
+        // [권한 분기] 모든 무대 종료 시 최종 결과 발표 버튼: 방장만 활성화, 일반 참가자는 비활성화 및 안내
+        if (isHost) {
+          revealFinalBtn.disabled = false;
+          revealFinalBtn.className = 'btn btn-neon-pink btn-pulse btn-large';
+          revealFinalBtn.innerHTML = '🏆 모든 팀 종료! 최종 결과 확인하기! (방장 전용)';
+          if (scoreHintText) scoreHintText.textContent = '🎉 모든 무대가 끝났습니다! 최종 결과 확인하기를 눌러주세요!';
+        } else {
+          revealFinalBtn.disabled = true;
+          revealFinalBtn.className = 'btn btn-disabled btn-large';
+          revealFinalBtn.innerHTML = '⏳ 방장이 최종 결과 발표를 준비 중입니다...';
+          if (scoreHintText) scoreHintText.textContent = '🎉 모든 무대가 끝났습니다! 방장이 최종 결과를 발표할 때까지 잠시만 기다려주세요.';
+        }
       } else {
         if (chooseHint) chooseHint.style.display = 'block';
         revealFinalBtn.style.display = 'none';
+        if (scoreHintText) scoreHintText.textContent = '🤫 전체 팀이 끝나지 않아 소수점은 비밀입니다!';
       }
     } else {
       scoringPanel.style.display = 'none';
@@ -1115,6 +1148,11 @@ function renderFinalResults(teams) {
 
   playFanfareSound();
   launchConfetti(8);
+
+  // 시상식 하단 새로운 듀엣 대회 시작하기(리셋) 버튼: 관리자(방장)만 노출 보장
+  if (resetContestBtn) {
+    resetContestBtn.style.display = isHost ? 'inline-block' : 'none';
+  }
 }
 
 // 최초 진입 라우팅 실행

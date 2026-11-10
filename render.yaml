@@ -1,0 +1,11 @@
+# Render.com 무료 웹 서비스 배포 설정 파일
+services:
+  - type: web
+    name: duet-party-contest
+    env: node
+    plan: free
+    buildCommand: npm install
+    startCommand: node server.js
+    envVars:
+      - key: PORT
+        value: 10000

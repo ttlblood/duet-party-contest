@@ -696,6 +696,7 @@ function renderState(data) {
   }
 }
 
+// 파트너 선택 드롭다운 업데이트 (파트너 2에는 본인이 노출되지 않도록 필터링)
 function updatePartnerDropdowns(users) {
   const prev1 = teamSelect1.value;
   const prev2 = teamSelect2.value;
@@ -703,24 +704,37 @@ function updatePartnerDropdowns(users) {
   teamSelect1.innerHTML = '<option value="">선택하세요</option>';
   teamSelect2.innerHTML = '<option value="">선택하세요</option>';
 
+  // 파트너 1 목록: 전체 참석자 (기본 선택: 본인)
   users.forEach(u => {
     const opt1 = document.createElement('option');
     opt1.value = u.name;
     opt1.textContent = u.name + (u.name === myUserName ? ' (나)' : '');
     teamSelect1.appendChild(opt1);
+  });
+
+  // 파트너 2 목록: 본인(myUserName)을 제외한 다른 참가자만 노출
+  users.forEach(u => {
+    if (u.name === myUserName) return; // 파트너 2에는 본인 제외
 
     const opt2 = document.createElement('option');
     opt2.value = u.name;
-    opt2.textContent = u.name + (u.name === myUserName ? ' (나)' : '');
+    opt2.textContent = u.name;
     teamSelect2.appendChild(opt2);
   });
 
+  // 파트너 1은 기본적으로 본인으로 세팅
   if (!prev1 && myUserName) {
     teamSelect1.value = myUserName;
   } else {
     teamSelect1.value = prev1;
   }
-  teamSelect2.value = prev2;
+
+  // 파트너 2의 이전 선택값 복원 (단, 본인이 아니어야 함)
+  if (prev2 && prev2 !== myUserName) {
+    teamSelect2.value = prev2;
+  } else {
+    teamSelect2.value = '';
+  }
 }
 
 function renderTeamsList(teams, gameStatus) {

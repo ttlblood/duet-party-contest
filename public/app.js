@@ -223,6 +223,14 @@ const scoreButtons = document.querySelectorAll('.score-btn');
 const scoreSubmittedMsg = document.getElementById('score-submitted-msg');
 const myChosenScore = document.getElementById('my-chosen-score');
 
+// 실시간 관객 채점 현황 위젯 요소
+const votingProgressBox = document.getElementById('voting-progress-box');
+const voterSubmittedCount = document.getElementById('voter-submitted-count');
+const voterTotalCount = document.getElementById('voter-total-count');
+const voterProgressPercent = document.getElementById('voter-progress-percent');
+const votingProgressBarFill = document.getElementById('voting-progress-bar-fill');
+const voterStatusChips = document.getElementById('voter-status-chips');
+
 // 무대 결과 (소수점 물음표 처리)
 const stageResultBox = document.getElementById('stage-result-box');
 const maskedScoreText = document.getElementById('masked-score-text');
@@ -722,6 +730,9 @@ function renderState(data) {
   teamCountDisplay.textContent = teams.length;
   renderTeamsList(teams, gameStatus);
 
+  // 실시간 관객 채점 완료 현황 렌더링
+  renderVotingProgress(data.votingProgress);
+
   // 게임 상태별 화면 전환
   if (gameStatus === 'LOBBY') {
     switchView('lobby');
@@ -806,6 +817,36 @@ window.deleteTeam = function(teamId) {
   socket.emit('delete_team', { teamId });
 };
 
+// 실시간 관객 채점 참여 현황 렌더러 (점수는 비밀, 각 멤버의 채점 완료 여부만 실시간 표시)
+function renderVotingProgress(votingProgress) {
+  if (!votingProgress) {
+    if (votingProgressBox) votingProgressBox.style.display = 'none';
+    return;
+  }
+
+  if (votingProgressBox) votingProgressBox.style.display = 'block';
+
+  const { voters, submittedCount, totalEligibleCount } = votingProgress;
+  const percent = totalEligibleCount > 0 ? Math.round((submittedCount / totalEligibleCount) * 100) : 0;
+
+  if (voterSubmittedCount) voterSubmittedCount.textContent = submittedCount;
+  if (voterTotalCount) voterTotalCount.textContent = totalEligibleCount;
+  if (voterProgressPercent) voterProgressPercent.textContent = `${percent}%`;
+  if (votingProgressBarFill) votingProgressBarFill.style.width = `${percent}%`;
+
+  if (voterStatusChips && voters) {
+    voterStatusChips.innerHTML = '';
+    voters.forEach(v => {
+      const chip = document.createElement('span');
+      chip.className = `voter-chip ${v.hasSubmitted ? 'done' : 'waiting'}`;
+      chip.innerHTML = v.hasSubmitted 
+        ? `✅ ${v.name} (완료)` 
+        : `⏳ ${v.name} (채점 중...)`;
+      voterStatusChips.appendChild(chip);
+    });
+  }
+}
+
 // 무대 및 채점 화면 렌더러
 function renderContestStage(teams, officialTeamIndex, gameStatus) {
   if (!teams || teams.length === 0) return;
@@ -852,10 +893,13 @@ function renderContestStage(teams, officialTeamIndex, gameStatus) {
       if (isOfficialCurrent && !isSelectedByMe) chip.classList.add('active-stage');
 
       let badgeHtml = '';
-      if (isOfficialCurrent) {
-        badgeHtml = '<span class="chip-status-badge chip-status-current">🎤 공식 무대</span>';
-      } else if (isScored) {
+      if (isScored) {
         badgeHtml = `<span class="chip-status-badge chip-status-scored">✅ ${Math.floor(t.avgScore)}.??점</span>`;
+        if (isOfficialCurrent) {
+          badgeHtml += ' <span class="chip-status-badge chip-status-current">방금 무대</span>';
+        }
+      } else if (isOfficialCurrent) {
+        badgeHtml = '<span class="chip-status-badge chip-status-current">🎤 지금 무대</span>';
       } else {
         badgeHtml = '<span class="chip-status-badge chip-status-waiting">대기 중</span>';
       }

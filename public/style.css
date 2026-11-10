@@ -762,6 +762,96 @@ select option {
   color: var(--text-dim);
 }
 
+/* 실시간 채점 완료 현황 위젯 스타일 */
+.voting-progress-card {
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--border-glass);
+  border-radius: 14px;
+  padding: 12px 14px;
+  margin-bottom: 16px;
+  text-align: left;
+}
+
+.voting-progress-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.progress-title {
+  color: var(--neon-cyan);
+}
+
+.progress-count {
+  color: #fff;
+  font-size: 12px;
+}
+
+.progress-count strong {
+  color: var(--neon-pink);
+  font-size: 14px;
+}
+
+.voting-progress-bar-bg {
+  width: 100%;
+  height: 8px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  overflow: hidden;
+  margin-bottom: 10px;
+}
+
+.voting-progress-bar-fill {
+  height: 100%;
+  background: linear-gradient(to right, var(--neon-cyan), var(--neon-pink));
+  border-radius: 10px;
+  transition: width 0.3s ease;
+  box-shadow: 0 0 10px var(--neon-cyan);
+}
+
+.voter-status-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-height: 28px;
+}
+
+.voter-chip {
+  padding: 4px 9px;
+  border-radius: 16px;
+  font-size: 11px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.25s ease;
+  white-space: nowrap;
+}
+
+/* 채점 완료한 멤버: 산뜻한 시안/그린 네온 */
+.voter-chip.done {
+  background: rgba(0, 240, 255, 0.2);
+  border: 1px solid var(--neon-cyan);
+  color: #fff;
+  box-shadow: 0 0 8px rgba(0, 240, 255, 0.35);
+}
+
+/* 아직 채점 중인 멤버: 펄스 대기 애니메이션 */
+.voter-chip.waiting {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: var(--text-dim);
+  animation: pulseWaiting 1.4s infinite alternate;
+}
+
+@keyframes pulseWaiting {
+  0% { opacity: 0.6; }
+  100% { opacity: 1; border-color: rgba(255, 255, 255, 0.45); }
+}
+
 /* 팀원 대기 뷰 */
 .performer-wait-box {
   text-align: center;

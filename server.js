@@ -83,6 +83,30 @@ function broadcastRoomState(roomCode) {
   const room = rooms[roomCode];
   if (!room) return;
 
+  // 실시간 채점 참여 현황 계산 (점수 값은 철저히 비밀 유지하고, 각 멤버의 채점 완료 여부만 제공)
+  let votingProgress = null;
+  if (room.gameStatus === 'SCORING') {
+    const currentTeam = room.teams[room.currentTeamIndex];
+    if (currentTeam) {
+      // 본인 무대 팀원 2명을 제외한 전체 관객(투표 대상자) 목록
+      const eligibleUsers = Object.values(room.users).filter(u => 
+        u.name !== currentTeam.member1 && u.name !== currentTeam.member2
+      );
+      const voters = eligibleUsers.map(u => ({
+        id: u.id,
+        name: u.name,
+        hasSubmitted: !!(currentTeam.rawScores && currentTeam.rawScores[u.id] !== undefined)
+      }));
+      const submittedCount = voters.filter(v => v.hasSubmitted).length;
+      votingProgress = {
+        voters,
+        submittedCount,
+        totalEligibleCount: eligibleUsers.length,
+        isAllSubmitted: (submittedCount >= eligibleUsers.length && eligibleUsers.length > 0)
+      };
+    }
+  }
+
   io.to(roomCode).emit('state_update', {
     roomCode: room.id,
     title: room.title,
@@ -93,6 +117,7 @@ function broadcastRoomState(roomCode) {
     gameStatus: room.gameStatus,
     scoringTimeLeft: room.scoringTimeLeft,
     countdownTimeLeft: room.countdownTimeLeft,
+    votingProgress, // 실시간 멤버별 채점 완료 현황 객체 추가
     roomUrl: `${serverUrl}/${roomCode}`,
     qrCodeDataUrl: room.qrCodeDataUrl
   });

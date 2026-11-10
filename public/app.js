@@ -255,13 +255,20 @@ const qrUrlText = document.getElementById('qr-url-text');
 const copyUrlBtn = document.getElementById('copy-url-btn');
 
 // =======================================================
-// [5] 뷰(View) 전환 함수 (비활성 뷰는 완벽히 숨김)
+// [5] 뷰(View) 전환 함수 (비활성 뷰는 완벽히 숨김 & CSS 캐시 무관 100% 방어)
 // =======================================================
 function switchView(viewName) {
-  document.querySelectorAll('.view-section').forEach(sec => sec.classList.remove('active'));
+  // 모든 뷰 섹션 비활성화 및 인라인 display: none 강제 적용
+  document.querySelectorAll('.view-section').forEach(sec => {
+    sec.classList.remove('active');
+    sec.style.display = 'none';
+  });
+
   const target = document.getElementById(`${viewName}-view`);
   if (target) {
     target.classList.add('active');
+    // 카운트다운 뷰는 flex, 그 외 일반 뷰는 block으로 명시적 표시
+    target.style.display = (viewName === 'countdown') ? 'flex' : 'block';
   }
 }
 
@@ -348,6 +355,14 @@ function requestJoinRoom(roomCode, userName, adminToken) {
   });
 }
 
+// 디폴트 대회명 생성 함수 (년도.월 싱어게인 듀엣 가요제)
+function getDefaultContestTitle() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  return `${year}.${month} 싱어게인 듀엣 가요제`;
+}
+
 // =======================================================
 // [7] 대회 열기 (방 생성) 및 홈 뷰 이벤트
 // =======================================================
@@ -356,10 +371,15 @@ function requestJoinRoom(roomCode, userName, adminToken) {
 openCreateRoomBtn.addEventListener('click', () => {
   playClickSound();
   createRoomModal.style.display = 'flex';
+  
+  // 디폴트 대회명 자동 입력 (년도.월 싱어게인 듀엣 가요제)
+  newContestTitle.value = getDefaultContestTitle();
+  
   if (myUserName) {
     newHostName.value = myUserName;
   }
   newContestTitle.focus();
+  newContestTitle.select(); // 편하게 수정할 수 있도록 전체 선택
 });
 
 createRoomCloseBtn.addEventListener('click', () => {
@@ -371,11 +391,11 @@ createRoomForm.addEventListener('submit', (e) => {
   e.preventDefault();
   playClickSound();
 
-  const title = newContestTitle.value.trim();
+  const title = newContestTitle.value.trim() || getDefaultContestTitle();
   const host = newHostName.value.trim();
 
-  if (!title || !host) {
-    showToast('대회 이름과 닉네임을 입력해 주세요.');
+  if (!host) {
+    showToast('관리자(방장) 닉네임을 입력해 주세요.');
     return;
   }
 

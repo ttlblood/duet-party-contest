@@ -21,8 +21,15 @@ const io = new Server(server, {
 
 const PORT = process.env.PORT || 3000;
 
-// 정적 파일 서빙 디렉토리 설정 (HTML, CSS, JS)
-app.use(express.static(path.join(__dirname, 'public')));
+// 정적 파일 서빙 디렉토리 설정 (모바일 브라우저 캐싱 방지를 위해 no-cache 헤더 적용)
+app.use(express.static(path.join(__dirname, 'public'), {
+  setHeaders: (res, filePath) => {
+    // CSS 및 JS 등 정적 자원이 항상 최신 버전으로 로드되도록 캐시 방지
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+  }
+}));
 
 // 로컬 IP 주소 탐색 함수 (동일 Wi-Fi 내 스마트폰 접속을 위함)
 function getLocalIpAddress() {
@@ -149,12 +156,20 @@ app.get('/:roomCode', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
+// 디폴트 대회명 생성 함수 (년도.월 싱어게인 듀엣 가요제)
+function getDefaultContestTitle() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  return `${year}.${month} 싱어게인 듀엣 가요제`;
+}
+
 // Socket.IO 이벤트 리스너
 io.on('connection', (socket) => {
 
   // 1. 새 듀엣 대회 방 생성 (개설자가 관리자가 됨)
   socket.on('create_room', async ({ title, hostName }, callback) => {
-    const trimmedTitle = (title || '싱어게인 듀엣 노래 대회').trim();
+    const trimmedTitle = (title || getDefaultContestTitle()).trim();
     const trimmedHostName = (hostName || '관리자').trim();
 
     // 중복되지 않는 6자리 방 코드 생성

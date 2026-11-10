@@ -8,51 +8,59 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=Noto+Sans+KR:wght@400;600;800;900&display=swap" rel="stylesheet">
-  <!-- 파티 스타일시트 -->
-  <link rel="stylesheet" href="style.css">
+  <!-- 파티 스타일시트 (캐시 버스팅 쿼리 추가) -->
+  <link rel="stylesheet" href="style.css?v=2.1.0">
 </head>
 <body>
   <!-- 축하 컨페티(꽃가루)를 위한 전체화면 캔버스 -->
   <canvas id="confetti-canvas"></canvas>
 
-  <!-- 파티 분위기를 연출하는 상단 미러볼 & 스포트라이트 조명 효과 -->
+  <!-- 파티 분위기를 연출하는 스포트라이트 배경 조명 효과 -->
   <div class="party-lighting">
     <div class="spotlight spotlight-left"></div>
     <div class="spotlight spotlight-right"></div>
-    <div class="disco-ball-wrapper">
-      <div class="disco-ball-string"></div>
-      <div class="disco-ball">
-        <div class="disco-ball-reflection"></div>
-      </div>
-    </div>
   </div>
 
   <div class="app-container">
     <!-- 헤더 영역: 파티 타이틀 및 현재 접속자, QR 토글 버튼 -->
     <header class="app-header">
-      <!-- 상단 컨트롤 & 상태 바 (좌: 상태 뱃지 그룹, 우: 조작 액션 버튼 그룹) -->
-      <div class="header-top-bar">
-        <div class="header-status-group">
+      <!-- [1열] 최상단 네비게이션 & 상태 컨트롤 바 (모바일 가로 1열 완벽 수용) -->
+      <div class="header-nav-row">
+        <div class="header-nav-left">
           <div class="live-badge" id="live-badge"><span class="pulse-dot"></span> LIVE</div>
           <div class="room-badge" id="room-badge" style="display: none;" title="클릭 시 초대 링크 복사">
             🏷️ <span id="room-code-display">ROOM</span>
           </div>
-          <div class="host-badge" id="host-badge" style="display: none;">
-            👑 방장
-          </div>
-          <div class="user-badge" id="my-profile-badge" style="display: none;">
-            <span class="user-icon">👤</span> <span id="my-name-display">접속 중...</span>
-          </div>
         </div>
-        <div class="header-actions">
+        <div class="header-nav-right">
           <!-- 사운드 효과 On/Off 토글 버튼 -->
           <button id="sound-toggle-btn" class="icon-btn" title="사운드 켜기/끄기">🔊</button>
-          <!-- 관리자 전용 리셋 버튼 (방장에게만 노출됨) -->
-          <button id="global-reset-btn" class="icon-btn reset-btn" title="대회 초기화 (로비로 이동)">🔄 리셋</button>
           <!-- QR 코드 보기 버튼 -->
           <button id="qr-modal-btn" class="icon-btn qr-btn" title="QR 코드 열기" style="display: none;">📱 QR</button>
+          <!-- 관리자 전용 리셋 버튼 (방장에게만 노출됨) -->
+          <button id="global-reset-btn" class="icon-btn reset-btn" title="대회 초기화 (로비로 이동)" style="display: none;">🔄 리셋</button>
         </div>
       </div>
+
+      <!-- [2열] 참가자 신원 뱃지 바 (방장 뱃지 & 내 프로필) -->
+      <div class="header-user-row" id="header-user-row">
+        <div class="host-badge" id="host-badge" style="display: none;">
+          👑 방장
+        </div>
+        <div class="user-badge" id="my-profile-badge" style="display: none;">
+          <span class="user-icon">👤</span> <span id="my-name-display">접속 중...</span>
+        </div>
+      </div>
+
+      <!-- [3열] 무대 중앙 미러볼 연출 (버튼과 겹치지 않고 타이틀 상단에 자연스럽게 매달림) -->
+      <div class="disco-ball-wrapper">
+        <div class="disco-ball-string"></div>
+        <div class="disco-ball">
+          <div class="disco-ball-reflection"></div>
+        </div>
+      </div>
+
+      <!-- [4열] 메인 대회 타이틀 -->
       <h1 class="main-title" id="contest-main-title">
         <span class="neon-pink">DUET</span> <span class="neon-cyan">PARTY</span> <span class="neon-yellow">FESTA</span>
       </h1>
@@ -107,7 +115,7 @@
       <!-- ============================================== -->
       <!-- [1] 로비 뷰: 참가자 입장, 팀 등록, 레디 확인 -->
       <!-- ============================================== -->
-      <section id="lobby-view" class="view-section">
+      <section id="lobby-view" class="view-section" style="display: none;">
         <!-- 참가자 접속 현황 카드 -->
         <div class="card glass-card">
           <div class="card-header">
@@ -185,7 +193,7 @@
       <!-- ============================================== -->
       <!-- [2] 대회 무대 및 점수 채점 뷰 -->
       <!-- ============================================== -->
-      <section id="contest-view" class="view-section">
+      <section id="contest-view" class="view-section" style="display: none;">
         <!-- 현재 무대 정보 배너 -->
         <div class="stage-banner">
           <div class="round-badge" id="current-round-text">STAGE 1 / 4</div>
@@ -304,7 +312,7 @@
       <!-- ============================================== -->
       <!-- [3] 10초 역 카운트다운 뷰 -->
       <!-- ============================================== -->
-      <section id="countdown-view" class="view-section">
+      <section id="countdown-view" class="view-section" style="display: none;">
         <div class="countdown-stage">
           <div class="countdown-glow-circle"></div>
           <h2 class="countdown-title">최종 순위 발표까지</h2>
@@ -316,7 +324,7 @@
       <!-- ============================================== -->
       <!-- [4] 최종 결과 및 시상식 뷰 -->
       <!-- ============================================== -->
-      <section id="result-view" class="view-section">
+      <section id="result-view" class="view-section" style="display: none;">
         <div class="results-header">
           <div class="trophy-bounce">🏆</div>
           <h2 class="result-title neon-yellow">최종 시상식 결과 발표</h2>
@@ -361,7 +369,7 @@
       <form id="create-room-form">
         <div class="form-group" style="text-align: left;">
           <label>대회 이름</label>
-          <input type="text" id="new-contest-title" placeholder="예: 2026 클럽 듀엣 가요제" required maxlength="30" value="2026 싱어게인 듀엣 가요제">
+          <input type="text" id="new-contest-title" placeholder="예: 2026.11 싱어게인 듀엣 가요제" required maxlength="30">
         </div>
         <div class="form-group" style="text-align: left;">
           <label>관리자(방장) 닉네임</label>
@@ -420,7 +428,7 @@
 
   <!-- Socket.io 클라이언트 라이브러리 (서버 내장 서빙) -->
   <script src="/socket.io/socket.io.js"></script>
-  <!-- 클라이언트 메인 스크립트 -->
-  <script src="app.js"></script>
+  <!-- 클라이언트 메인 스크립트 (캐시 버스팅 쿼리 추가) -->
+  <script src="app.js?v=2.1.0"></script>
 </body>
 </html>

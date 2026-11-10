@@ -333,14 +333,14 @@ body {
   font-weight: 600;
 }
 
-/* 섹션 화면 전환 */
+/* 섹션 화면 전환: 비활성화 상태에서는 어떤 뷰도 화면에 노출되지 않도록 엄격히 차단 */
 .view-section {
-  display: none;
+  display: none !important;
   animation: fadeIn 0.3s ease-out;
 }
 
 .view-section.active {
-  display: block;
+  display: block !important;
 }
 
 @keyframes fadeIn {
@@ -885,11 +885,11 @@ select option {
 }
 
 /* ================================================= */
-/* 10초 역 카운트다운 뷰 */
+/* 10초 역 카운트다운 뷰 (active일 때만 flex 활성화) */
 /* ================================================= */
-#countdown-view {
+#countdown-view.active {
   min-height: 70vh;
-  display: flex;
+  display: flex !important;
   align-items: center;
   justify-content: center;
 }
@@ -1268,4 +1268,103 @@ select option {
 
 .toast-message.show {
   transform: translateX(-50%) translateY(0);
+}
+
+/* ================================================= */
+/* 홈 / 랜딩 뷰 스타일 */
+/* ================================================= */
+.home-hero-card {
+  text-align: center;
+  padding: 36px 20px;
+  border: 2px solid var(--neon-cyan);
+  box-shadow: 0 0 35px rgba(0, 240, 255, 0.3);
+}
+
+.home-hero-icon {
+  font-size: 52px;
+  margin-bottom: 12px;
+  animation: bounceNote 1.5s infinite alternate;
+}
+
+.home-hero-title {
+  font-family: var(--font-heading);
+  font-size: 28px;
+  margin-bottom: 10px;
+  letter-spacing: 1px;
+}
+
+.home-hero-desc {
+  font-size: 14px;
+  color: var(--text-dim);
+  line-height: 1.6;
+  margin-bottom: 26px;
+}
+
+.home-actions-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 380px;
+  margin: 0 auto;
+}
+
+.room-join-box {
+  background: rgba(0, 0, 0, 0.35);
+  padding: 16px;
+  border-radius: 14px;
+  border: 1px solid var(--border-glass);
+}
+
+.room-join-form {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.room-input {
+  text-transform: uppercase;
+  text-align: center;
+  letter-spacing: 3px;
+  font-weight: 800;
+  font-size: 16px;
+}
+
+/* 방 정보 및 관리자 뱃지 */
+.room-badge {
+  background: rgba(0, 240, 255, 0.15);
+  border: 1px solid var(--neon-cyan);
+  color: var(--neon-cyan);
+  font-size: 11px;
+  font-weight: 800;
+  padding: 4px 10px;
+  border-radius: 20px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+
+.host-badge {
+  background: rgba(255, 190, 11, 0.2);
+  border: 1px solid var(--gold);
+  color: var(--gold);
+  font-size: 11px;
+  font-weight: 800;
+  padding: 4px 8px;
+  border-radius: 20px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* 관리자(방장) 전용 리셋 버튼: 기본적으로 숨김 처리되며 관리자일 때만 노출 */
+.reset-btn {
+  display: none !important;
+  background: rgba(255, 42, 133, 0.2) !important;
+  border-color: var(--neon-pink) !important;
+  color: #fff !important;
+}
+
+body.is-host .reset-btn {
+  display: inline-flex !important;
 }

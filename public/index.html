@@ -31,21 +31,27 @@
     <!-- 헤더 영역: 파티 타이틀 및 현재 접속자, QR 토글 버튼 -->
     <header class="app-header">
       <div class="header-left">
-        <div class="live-badge"><span class="pulse-dot"></span> LIVE CONTEST</div>
-        <div class="user-badge" id="my-profile-badge">
+        <div class="live-badge" id="live-badge"><span class="pulse-dot"></span> LIVE</div>
+        <div class="room-badge" id="room-badge" style="display: none;" title="방 코드 복사">
+          🏷️ <span id="room-code-display">ROOM</span>
+        </div>
+        <div class="host-badge" id="host-badge" style="display: none;">
+          👑 방장
+        </div>
+        <div class="user-badge" id="my-profile-badge" style="display: none;">
           <span class="user-icon">👤</span> <span id="my-name-display">접속 중...</span>
         </div>
       </div>
-      <h1 class="main-title">
+      <h1 class="main-title" id="contest-main-title">
         <span class="neon-pink">DUET</span> <span class="neon-cyan">PARTY</span> <span class="neon-yellow">FESTA</span>
       </h1>
       <div class="header-actions">
         <!-- 사운드 효과 On/Off 토글 버튼 -->
         <button id="sound-toggle-btn" class="icon-btn" title="사운드 켜기/끄기">🔊</button>
-        <!-- 언제든 로비로 복귀/초기화할 수 있는 리셋 버튼 -->
-        <button id="global-reset-btn" class="icon-btn reset-btn" title="대회 초기화 (로비로 이동)">🔄</button>
+        <!-- 관리자 전용 리셋 버튼 (방장에게만 노출됨) -->
+        <button id="global-reset-btn" class="icon-btn reset-btn" title="대회 초기화 (로비로 이동)">🔄 리셋</button>
         <!-- QR 코드 보기 버튼 -->
-        <button id="qr-modal-btn" class="icon-btn qr-btn" title="QR 코드 열기">📱 QR</button>
+        <button id="qr-modal-btn" class="icon-btn qr-btn" title="QR 코드 열기" style="display: none;">📱 QR</button>
       </div>
     </header>
 
@@ -67,11 +73,38 @@
 
     <!-- 메인 컨텐츠 영역 (상태별 화면 전환) -->
     <main id="main-content">
+
+      <!-- ============================================== -->
+      <!-- [0] 홈 뷰: 새 대회 열기 또는 방 코드로 입장 -->
+      <!-- ============================================== -->
+      <section id="home-view" class="view-section active">
+        <div class="card glass-card home-hero-card">
+          <div class="home-hero-icon">🎤</div>
+          <h2 class="home-hero-title">
+            <span class="neon-pink">싱어게인</span> <span class="neon-cyan">듀엣 가요제</span>
+          </h2>
+          <p class="home-hero-desc">
+            익명 점수 투표와 실시간 순위 발표로 즐기는<br>우리들만의 프라이빗 듀엣 노래 대회!
+          </p>
+          <div class="home-actions-wrapper">
+            <button id="open-create-room-btn" class="btn btn-party btn-large btn-block btn-pulse">
+              🏆 새 듀엣 대회 열기 (방 만들기)
+            </button>
+            <div class="room-join-box">
+              <label>초대받은 6자리 방 코드가 있으신가요?</label>
+              <form id="direct-join-form" class="room-join-form">
+                <input type="text" id="direct-room-input" class="room-input" placeholder="코드 6자리" maxlength="6" required>
+                <button type="submit" class="btn btn-neon-cyan">입장</button>
+              </form>
+            </div>
+          </div>
+        </div>
+      </section>
       
       <!-- ============================================== -->
       <!-- [1] 로비 뷰: 참가자 입장, 팀 등록, 레디 확인 -->
       <!-- ============================================== -->
-      <section id="lobby-view" class="view-section active">
+      <section id="lobby-view" class="view-section">
         <!-- 참가자 접속 현황 카드 -->
         <div class="card glass-card">
           <div class="card-header">
@@ -290,12 +323,37 @@
   </div>
 
   <!-- ============================================== -->
-  <!-- 모달 1: 첫 입장 시 닉네임 입력 모달 -->
+  <!-- 모달 0: 대회 열기 (방 생성) 모달 -->
   <!-- ============================================== -->
-  <div id="nickname-modal" class="modal-overlay">
+  <div id="create-room-modal" class="modal-overlay" style="display: none;">
+    <div class="modal-card glass-card">
+      <button id="create-room-close-btn" class="modal-close">&times;</button>
+      <div class="modal-icon">🏆</div>
+      <h2>새 듀엣 노래 대회 열기</h2>
+      <p>대회명과 관리자(본인) 이름을 입력하시면<br>전용 방 링크와 QR 코드가 생성됩니다.</p>
+      <form id="create-room-form">
+        <div class="form-group" style="text-align: left;">
+          <label>대회 이름</label>
+          <input type="text" id="new-contest-title" placeholder="예: 2026 클럽 듀엣 가요제" required maxlength="30" value="2026 싱어게인 듀엣 가요제">
+        </div>
+        <div class="form-group" style="text-align: left;">
+          <label>관리자(방장) 닉네임</label>
+          <input type="text" id="new-host-name" placeholder="본인 닉네임 입력 (예: 지민)" required maxlength="12">
+        </div>
+        <button type="submit" class="btn btn-party btn-block btn-large">
+          🚀 대회 개설하고 방 만들기
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- ============================================== -->
+  <!-- 모달 1: 참가자 입장 시 닉네임 입력 모달 -->
+  <!-- ============================================== -->
+  <div id="nickname-modal" class="modal-overlay" style="display: none;">
     <div class="modal-card glass-card">
       <div class="modal-icon">🎤</div>
-      <h2>클럽 듀엣 가요제에 오신 것을 환영합니다!</h2>
+      <h2 id="room-welcome-title">클럽 듀엣 가요제에 오신 것을 환영합니다!</h2>
       <p>대회 참가를 위해 본인의 <strong>이름(또는 닉네임)</strong>을 입력해 주세요.</p>
       <form id="nickname-form">
         <input type="text" id="nickname-input" placeholder="이름을 입력하세요 (예: 지민, 태형...)" required autofocus maxlength="12">

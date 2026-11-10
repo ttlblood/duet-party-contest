@@ -1,5 +1,6 @@
 /**
- * 클럽 듀엣 가요제 (Duet Party Contest) 클라이언트 스크립트 (app.js)
+ * 싱어게인 듀엣 노래 대회 (Duet Party Contest) 클라이언트 스크립트 (app.js)
+ * 방(Room) 기반 멀티 대회 시스템, 관리자(Host) 권한 제어,
  * 실시간 소켓 통신, Web Audio 사운드, 캔버스 컨페티, 익명 투표 및 시상식 연출
  */
 
@@ -7,7 +8,9 @@
 const socket = io();
 
 // 전역 클라이언트 상태
+let currentRoomCode = '';
 let myUserName = localStorage.getItem('duet_user_name') || '';
+let isHost = false;
 let currentGameState = null;
 let isSoundEnabled = true;
 let hasSubmittedScore = false;
@@ -68,7 +71,7 @@ function playHeartbeatBeat(isLast = false) {
 function playFanfareSound() {
   if (!isSoundEnabled) return;
   initAudio();
-  const notes = [523.25, 659.25, 783.99, 1046.50]; // C Major 코드
+  const notes = [523.25, 659.25, 783.99, 1046.50];
   notes.forEach((freq, idx) => {
     setTimeout(() => {
       const osc = audioCtx.createOscillator();
@@ -159,7 +162,7 @@ function launchConfetti(durationSeconds = 6) {
 }
 
 // =======================================================
-// [3] UI 유틸리티: 토스트 안내 메시지
+// [3] UI 토스트 알림 메시지
 // =======================================================
 const toastEl = document.getElementById('toast');
 let toastTimer = null;
@@ -176,10 +179,27 @@ function showToast(message) {
 // =======================================================
 // [4] DOM 요소 바인딩
 // =======================================================
+// 헤더 요소
+const contestMainTitle = document.getElementById('contest-main-title');
+const roomBadge = document.getElementById('room-badge');
+const roomCodeDisplay = document.getElementById('room-code-display');
+const hostBadge = document.getElementById('host-badge');
+const myProfileBadge = document.getElementById('my-profile-badge');
 const myNameDisplay = document.getElementById('my-name-display');
+const globalResetBtn = document.getElementById('global-reset-btn');
+const qrModalBtn = document.getElementById('qr-modal-btn');
+const soundToggleBtn = document.getElementById('sound-toggle-btn');
+
+// 홈 뷰 요소
+const openCreateRoomBtn = document.getElementById('open-create-room-btn');
+const directJoinForm = document.getElementById('direct-join-form');
+const directRoomInput = document.getElementById('direct-room-input');
+
+// 로비 뷰 요소
 const userCountDisplay = document.getElementById('user-count');
 const teamCountDisplay = document.getElementById('team-count');
 const usersTagList = document.getElementById('users-tag-list');
+const populateDemoBtn = document.getElementById('populate-demo-btn');
 const teamSelect1 = document.getElementById('team-member-1');
 const teamSelect2 = document.getElementById('team-member-2');
 const teamSongInput = document.getElementById('team-song');
@@ -187,7 +207,6 @@ const teamRegisterForm = document.getElementById('team-register-form');
 const registeredTeamsList = document.getElementById('registered-teams-list');
 const readyToggleBtn = document.getElementById('ready-toggle-btn');
 const startContestBtn = document.getElementById('start-contest-btn');
-const populateDemoBtn = document.getElementById('populate-demo-btn');
 
 // 무대/채점 뷰 요소
 const currentRoundText = document.getElementById('current-round-text');
@@ -217,21 +236,26 @@ const podiumContainer = document.getElementById('podium-container');
 const fullRankingList = document.getElementById('full-ranking-list');
 const resetContestBtn = document.getElementById('reset-contest-btn');
 
-// 모달 및 헤더 컨트롤
+// 모달 요소
+const createRoomModal = document.getElementById('create-room-modal');
+const createRoomCloseBtn = document.getElementById('create-room-close-btn');
+const createRoomForm = document.getElementById('create-room-form');
+const newContestTitle = document.getElementById('new-contest-title');
+const newHostName = document.getElementById('new-host-name');
+
 const nicknameModal = document.getElementById('nickname-modal');
 const nicknameForm = document.getElementById('nickname-form');
 const nicknameInput = document.getElementById('nickname-input');
+const roomWelcomeTitle = document.getElementById('room-welcome-title');
+
 const qrModal = document.getElementById('qr-modal');
-const qrModalBtn = document.getElementById('qr-modal-btn');
 const qrCloseBtn = document.getElementById('qr-close-btn');
 const qrImage = document.getElementById('qr-image');
 const qrUrlText = document.getElementById('qr-url-text');
 const copyUrlBtn = document.getElementById('copy-url-btn');
-const soundToggleBtn = document.getElementById('sound-toggle-btn');
-const globalResetBtn = document.getElementById('global-reset-btn');
 
 // =======================================================
-// [5] 뷰(View) 전환 함수
+// [5] 뷰(View) 전환 함수 (비활성 뷰는 완벽히 숨김)
 // =======================================================
 function switchView(viewName) {
   document.querySelectorAll('.view-section').forEach(sec => sec.classList.remove('active'));
@@ -241,35 +265,182 @@ function switchView(viewName) {
   }
 }
 
-// =======================================================
-// [6] 닉네임 입력 및 입장 처리
-// =======================================================
-if (myUserName) {
-  nicknameInput.value = myUserName;
-  nicknameModal.style.display = 'none';
-  myNameDisplay.textContent = myUserName;
-  socket.emit('user_join', { name: myUserName });
-} else {
-  nicknameModal.style.display = 'flex';
+// 관리자(Host) 권한 UI 갱신 함수
+function setHostMode(isHostUser) {
+  isHost = isHostUser;
+  if (isHost) {
+    document.body.classList.add('is-host');
+    hostBadge.style.display = 'inline-flex';
+    globalResetBtn.style.display = 'inline-flex';
+  } else {
+    document.body.classList.remove('is-host');
+    hostBadge.style.display = 'none';
+    globalResetBtn.style.display = 'none';
+  }
 }
 
+// =======================================================
+// [6] 라우팅 및 초기 진입 처리
+// =======================================================
+function checkInitialRoute() {
+  const path = window.location.pathname.replace(/^\/+|\/+$/g, '');
+  
+  if (path && path.length >= 4) {
+    // 특정 방 경로로 진입한 경우 (예: /aB3k9X)
+    currentRoomCode = path;
+    initRoomJoin(currentRoomCode);
+  } else {
+    // 루트 경로인 경우 -> 홈 뷰 표시
+    switchView('home');
+    roomBadge.style.display = 'none';
+    hostBadge.style.display = 'none';
+    myProfileBadge.style.display = 'none';
+    qrModalBtn.style.display = 'none';
+    globalResetBtn.style.display = 'none';
+  }
+}
+
+// 방 입장 처리 함수
+function initRoomJoin(roomCode) {
+  const savedAdminToken = localStorage.getItem('duet_admin_' + roomCode) || '';
+  
+  if (myUserName) {
+    // 이미 닉네임이 저장되어 있다면 자동 조인 시도
+    requestJoinRoom(roomCode, myUserName, savedAdminToken);
+  } else {
+    // 닉네임이 없으면 참가자 이름 입력 모달 표시
+    nicknameModal.style.display = 'flex';
+    nicknameInput.focus();
+  }
+}
+
+// 서버에 join_room 요청
+function requestJoinRoom(roomCode, userName, adminToken) {
+  socket.emit('join_room', { roomCode, userName, adminToken }, (res) => {
+    if (!res || !res.success) {
+      showToast(res ? res.message : '방 입장에 실패했습니다.');
+      // 존재하지 않는 방이면 홈으로 이동
+      setTimeout(() => {
+        window.location.href = '/';
+      }, 1500);
+      return;
+    }
+
+    currentRoomCode = res.roomCode;
+    myUserName = userName;
+    localStorage.setItem('duet_user_name', myUserName);
+
+    // 헤더 상태 갱신
+    roomCodeDisplay.textContent = currentRoomCode;
+    roomBadge.style.display = 'inline-flex';
+    myProfileBadge.style.display = 'inline-flex';
+    myNameDisplay.textContent = myUserName;
+    qrModalBtn.style.display = 'inline-flex';
+
+    if (res.title) {
+      contestMainTitle.innerHTML = `<span class="neon-pink">${res.title}</span>`;
+    }
+
+    setHostMode(res.isHost);
+    nicknameModal.style.display = 'none';
+    switchView('lobby');
+  });
+}
+
+// =======================================================
+// [7] 대회 열기 (방 생성) 및 홈 뷰 이벤트
+// =======================================================
+
+// [🏆 새 듀엣 대회 열기] 버튼 클릭
+openCreateRoomBtn.addEventListener('click', () => {
+  playClickSound();
+  createRoomModal.style.display = 'flex';
+  if (myUserName) {
+    newHostName.value = myUserName;
+  }
+  newContestTitle.focus();
+});
+
+createRoomCloseBtn.addEventListener('click', () => {
+  createRoomModal.style.display = 'none';
+});
+
+// 대회 열기 폼 제출
+createRoomForm.addEventListener('submit', (e) => {
+  e.preventDefault();
+  playClickSound();
+
+  const title = newContestTitle.value.trim();
+  const host = newHostName.value.trim();
+
+  if (!title || !host) {
+    showToast('대회 이름과 닉네임을 입력해 주세요.');
+    return;
+  }
+
+  socket.emit('create_room', { title, hostName: host }, (res) => {
+    if (!res || !res.success) {
+      showToast('대회 방 생성에 실패했습니다.');
+      return;
+    }
+
+    currentRoomCode = res.roomCode;
+    myUserName = res.hostName;
+    localStorage.setItem('duet_user_name', myUserName);
+    localStorage.setItem('duet_admin_' + res.roomCode, res.adminToken);
+
+    // URL을 6자리 방 경로로 갱신 (예: /aB3k9X)
+    window.history.pushState(null, '', '/' + currentRoomCode);
+
+    createRoomModal.style.display = 'none';
+    setHostMode(true);
+
+    roomCodeDisplay.textContent = currentRoomCode;
+    roomBadge.style.display = 'inline-flex';
+    myProfileBadge.style.display = 'inline-flex';
+    myNameDisplay.textContent = myUserName;
+    qrModalBtn.style.display = 'inline-flex';
+
+    contestMainTitle.innerHTML = `<span class="neon-pink">${res.title}</span>`;
+    switchView('lobby');
+
+    showToast(`🎉 [${res.title}] 방이 개설되었습니다! 우측 상단 QR로 참가자를 초대하세요.`);
+  });
+});
+
+// 방 코드 직접 입력 폼 제출
+directJoinForm.addEventListener('submit', (e) => {
+  e.preventDefault();
+  playClickSound();
+  const code = directRoomInput.value.trim();
+  if (code) {
+    window.location.href = '/' + code;
+  }
+});
+
+// 참가자 닉네임 입력 폼 제출
 nicknameForm.addEventListener('submit', (e) => {
   e.preventDefault();
   const name = nicknameInput.value.trim();
   if (!name) return;
 
-  myUserName = name;
-  localStorage.setItem('duet_user_name', myUserName);
-  myNameDisplay.textContent = myUserName;
-  nicknameModal.style.display = 'none';
-
+  const savedAdminToken = localStorage.getItem('duet_admin_' + currentRoomCode) || '';
   initAudio();
   playClickSound();
-  socket.emit('user_join', { name: myUserName });
+  requestJoinRoom(currentRoomCode, name, savedAdminToken);
+});
+
+// 방 코드 뱃지 클릭 시 초대 링크 복사
+roomBadge.addEventListener('click', () => {
+  playClickSound();
+  const shareUrl = window.location.href;
+  navigator.clipboard.writeText(shareUrl).then(() => {
+    showToast(`📋 초대 링크가 복사되었습니다! (${currentRoomCode})`);
+  });
 });
 
 // =======================================================
-// [7] QR 코드 및 사운드 제어
+// [8] QR 모달 및 공통 컨트롤
 // =======================================================
 qrModalBtn.addEventListener('click', () => {
   playClickSound();
@@ -293,7 +464,7 @@ soundToggleBtn.addEventListener('click', () => {
 });
 
 // =======================================================
-// [8] 로비 기능: 팀 등록, 레디, 대회 시작
+// [9] 로비 기능: 팀 등록, 레디, 대회 시작, 데모 생성
 // =======================================================
 
 // 듀엣 팀 등록
@@ -346,8 +517,34 @@ if (populateDemoBtn) {
   });
 }
 
+// 관리자 전용 리셋 버튼
+if (globalResetBtn) {
+  globalResetBtn.addEventListener('click', () => {
+    if (!isHost) {
+      showToast('대회 초기화는 관리자(방장)만 가능합니다.');
+      return;
+    }
+    playClickSound();
+    if (confirm('정말로 대회를 초기화하고 로비(대기실)로 돌아가시겠습니까?\n등록된 팀과 진행 점수가 모두 초기화됩니다.')) {
+      socket.emit('reset_contest');
+      showToast('대회가 초기화되었습니다.');
+    }
+  });
+}
+
+resetContestBtn.addEventListener('click', () => {
+  if (!isHost) {
+    showToast('대회 초기화는 관리자(방장)만 가능합니다.');
+    return;
+  }
+  playClickSound();
+  if (confirm('새로운 대회를 시작하시겠습니까? 등록된 팀과 점수가 초기화됩니다.')) {
+    socket.emit('reset_contest');
+  }
+});
+
 // =======================================================
-// [9] 무대 및 채점 인터랙션
+// [10] 무대 및 채점 인터랙션
 // =======================================================
 
 // 해당 팀원의 [점수 받기] 클릭
@@ -384,31 +581,13 @@ revealFinalBtn.addEventListener('click', () => {
   socket.emit('start_result_countdown');
 });
 
-// 리셋 버튼 (최종 결과 화면)
-resetContestBtn.addEventListener('click', () => {
-  playClickSound();
-  if (confirm('새로운 대회를 시작하시겠습니까? 등록된 팀과 점수가 초기화됩니다.')) {
-    socket.emit('reset_contest');
-  }
-});
-
-// 상단 헤더의 전체 초기화 (로비로 돌아가기) 버튼
-if (globalResetBtn) {
-  globalResetBtn.addEventListener('click', () => {
-    playClickSound();
-    if (confirm('정말로 대회를 초기화하고 로비(대기실)로 돌아가시겠습니까?\n등록된 팀과 진행 점수가 모두 초기화됩니다.')) {
-      socket.emit('reset_contest');
-      showToast('대회가 초기화되어 로비로 이동했습니다.');
-    }
-  });
-}
-
 // =======================================================
-// [10] 소켓 이벤트 수신 및 상태 렌더링
+// [11] 소켓 이벤트 수신 및 상태 렌더링
 // =======================================================
 
-// 서버 상태 전체 업데이트 수신
+// 방 상태 전체 업데이트 수신
 socket.on('state_update', (data) => {
+  if (!currentRoomCode || currentRoomCode !== data.roomCode) return;
   currentGameState = data;
   renderState(data);
 });
@@ -417,30 +596,28 @@ socket.on('state_update', (data) => {
 socket.on('scoring_tick', ({ timeLeft }) => {
   scoringTimerNumber.textContent = timeLeft;
   if (timeLeft <= 5) {
-    playHeartbeatBeat(); // 마지막 5초 카운트 긴장감 사운드
+    playHeartbeatBeat();
   }
 });
 
-// 채점 점수 제출 완료 응답
+// 점수 제출 완료 응답
 socket.on('score_submitted_ack', ({ score }) => {
   hasSubmittedScore = true;
   myChosenScore.textContent = score;
   scoreSubmittedMsg.style.display = 'block';
 });
 
-// 해당 팀 무대 점수 공개 이벤트 (정수 + 물음표 마스킹 처리!)
+// 무대 점수 공개 이벤트 (소수점 물음표 마스킹!)
 socket.on('score_revealed', (result) => {
   scoringPanel.style.display = 'none';
   stageResultBox.style.display = 'block';
 
-  // 전체 팀이 완료되지 않았으면 소수점 물음표 처리! (예: 8.??점)
   if (!result.allTeamsFinished) {
     maskedScoreText.textContent = `${result.integerPart}.??`;
     scoreHintText.textContent = '🤫 전체 팀이 끝나지 않아 소수점은 비밀입니다!';
     nextTeamBtn.style.display = 'block';
     revealFinalBtn.style.display = 'none';
   } else {
-    // 모든 팀이 완료된 경우
     maskedScoreText.textContent = `${result.integerPart}.??`;
     scoreHintText.textContent = '🎉 모든 무대가 끝났습니다! 최종 결과 확인하기를 눌러주세요!';
     nextTeamBtn.style.display = 'none';
@@ -460,15 +637,18 @@ socket.on('error_message', (msg) => {
 });
 
 // =======================================================
-// [11] 메인 상태 렌더러 (State Renderer)
+// [12] 상태 렌더러 함수
 // =======================================================
 function renderState(data) {
-  const { users, teams, currentTeamIndex, gameStatus, qrCodeDataUrl, serverUrl } = data;
+  const { users, teams, currentTeamIndex, gameStatus, qrCodeDataUrl, roomUrl, title } = data;
 
-  // 1. 헤더 및 접속자 정보 갱신
+  if (title) {
+    contestMainTitle.innerHTML = `<span class="neon-pink">${title}</span>`;
+  }
+
   userCountDisplay.textContent = users.length;
   if (qrCodeDataUrl) qrImage.src = qrCodeDataUrl;
-  if (serverUrl) qrUrlText.textContent = serverUrl;
+  if (roomUrl) qrUrlText.textContent = roomUrl;
 
   const me = users.find(u => u.name === myUserName);
   if (me) {
@@ -481,25 +661,25 @@ function renderState(data) {
     }
   }
 
-  // 2. 접속자 태그 목록 렌더링
+  // 참가자 태그 렌더링
   usersTagList.innerHTML = '';
   users.forEach(u => {
     const span = document.createElement('span');
     span.className = 'user-tag';
     if (u.name === myUserName) span.classList.add('me');
     if (u.isReady) span.classList.add('ready');
-    span.innerHTML = `${u.isReady ? '⭐' : '👤'} ${u.name}`;
+    span.innerHTML = `${u.isHost ? '👑' : (u.isReady ? '⭐' : '👤')} ${u.name}`;
     usersTagList.appendChild(span);
   });
 
-  // 3. 파트너 선택 드롭다운 갱신
+  // 파트너 선택 드롭다운 갱신
   updatePartnerDropdowns(users);
 
-  // 4. 등록된 팀 목록 렌더링
+  // 팀 목록 렌더링
   teamCountDisplay.textContent = teams.length;
   renderTeamsList(teams, gameStatus);
 
-  // 5. 게임 상태별 화면 전환
+  // 게임 상태별 화면 전환
   if (gameStatus === 'LOBBY') {
     switchView('lobby');
     stageResultBox.style.display = 'none';
@@ -515,7 +695,6 @@ function renderState(data) {
   }
 }
 
-// 파트너 선택 드롭다운 업데이트
 function updatePartnerDropdowns(users) {
   const prev1 = teamSelect1.value;
   const prev2 = teamSelect2.value;
@@ -535,7 +714,6 @@ function updatePartnerDropdowns(users) {
     teamSelect2.appendChild(opt2);
   });
 
-  // 본인이 있으면 기본 선택 편의 제공
   if (!prev1 && myUserName) {
     teamSelect1.value = myUserName;
   } else {
@@ -544,7 +722,6 @@ function updatePartnerDropdowns(users) {
   teamSelect2.value = prev2;
 }
 
-// 등록된 팀 목록 렌더링
 function renderTeamsList(teams, gameStatus) {
   if (teams.length === 0) {
     registeredTeamsList.innerHTML = '<p class="empty-state">아직 등록된 듀엣 팀이 없습니다. 팀과 곡목을 등록해 주세요!</p>';
@@ -566,13 +743,11 @@ function renderTeamsList(teams, gameStatus) {
   });
 }
 
-// 팀 삭제 핸들러
 window.deleteTeam = function(teamId) {
   playClickSound();
   socket.emit('delete_team', { teamId });
 };
 
-// 무대 및 채점 화면 렌더링
 function renderContestStage(teams, currentTeamIndex, gameStatus) {
   const currentTeam = teams[currentTeamIndex];
   if (!currentTeam) return;
@@ -581,31 +756,25 @@ function renderContestStage(teams, currentTeamIndex, gameStatus) {
   currentTeamMembers.textContent = `${currentTeam.member1} & ${currentTeam.member2}`;
   currentTeamSong.textContent = currentTeam.songTitle;
 
-  // 내가 현재 무대의 듀엣 팀원인지 판별
   const isPerformer = (myUserName === currentTeam.member1 || myUserName === currentTeam.member2);
 
-  // 채점 진행 중(SCORING)인 경우
   if (gameStatus === 'SCORING') {
     scoringPanel.style.display = 'block';
     stageResultBox.style.display = 'none';
 
     if (isPerformer) {
-      // 팀원은 대기 화면
       performerWaitingView.style.display = 'block';
       audienceScoringView.style.display = 'none';
     } else {
-      // 관객은 채점 화면
       performerWaitingView.style.display = 'none';
       audienceScoringView.style.display = 'block';
 
-      // 새로운 라운드 채점 시작 시 초기화
       if (!hasSubmittedScore) {
         scoreButtons.forEach(b => b.classList.remove('selected'));
         scoreSubmittedMsg.style.display = 'none';
       }
     }
   } else {
-    // CONTEST (노래 부르는 중 또는 채점 완료 후 대기)
     hasSubmittedScore = false;
     mySelectedScore = null;
 
@@ -619,14 +788,9 @@ function renderContestStage(teams, currentTeamIndex, gameStatus) {
   }
 }
 
-// =======================================================
-// [12] 최종 시상식 결과 렌더링
-// =======================================================
 function renderFinalResults(teams) {
-  // 평균 점수 높은 순으로 정렬
   const sortedTeams = [...teams].sort((a, b) => (b.avgScore || 0) - (a.avgScore || 0));
 
-  // 포디움 시상대 생성 (상위 최대 3팀)
   podiumContainer.innerHTML = '';
   const top3 = sortedTeams.slice(0, 3);
 
@@ -647,7 +811,6 @@ function renderFinalResults(teams) {
     podiumContainer.appendChild(col);
   });
 
-  // 전체 순위 리스트 생성
   fullRankingList.innerHTML = '';
   sortedTeams.forEach((team, idx) => {
     const rank = idx + 1;
@@ -664,7 +827,9 @@ function renderFinalResults(teams) {
     fullRankingList.appendChild(row);
   });
 
-  // 시상식 축하 팡파르 및 컨페티 폭죽 연출!
   playFanfareSound();
   launchConfetti(8);
 }
+
+// 최초 진입 라우팅 실행
+checkInitialRoute();

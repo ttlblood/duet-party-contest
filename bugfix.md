@@ -10,3 +10,12 @@
   1. 서버 프로세스를 재시작하여 메모리 내 잔여 테스트 데이터를 완전히 비우고 기본 로비(`LOBBY`) 상태로 초기화.
   2. 상단 헤더 액션 바에 언제든 대회를 초기화할 수 있는 **[🔄 초기화]** 버튼(`global-reset-btn`)을 추가하여 진행 중에도 안전하게 확인창을 거쳐 로비로 리셋 가능하도록 개선.
   3. `public/app.js` 및 `public/index.html`에 해당 기능 추가 및 이벤트 바인딩 완료.
+
+### [2026-11-10 15:02] 로비/초기 화면 하단에 카운트다운(0초) 뷰가 중복 노출되던 현상 수정
+- **발생 증상**:
+  - 초기화 화면이나 로비 화면에서 스크롤을 내리면 화면 맨 아래에 "최종 순위 발표까지 0" 카운트다운 화면이 상시 노출되던 문제.
+- **원인 분석**:
+  - CSS에서 `#countdown-view` ID 선택자에 `display: flex;`가 기본 선언되어 있어, 클래스 선택자인 `.view-section { display: none; }`보다 CSS 우선순위(Specificity)가 높아 비활성화 상태에서도 화면에 노출됨.
+- **조치 사항**:
+  1. `.view-section`에 `display: none !important;` 및 `.view-section.active`에 `display: block !important;`를 부여하여 비활성화 섹션의 완전 은닉 보장.
+  2. `#countdown-view.active`에만 `display: flex !important;`가 적용되도록 수정하여 오직 10초 카운트다운 시점에만 노출되도록 버그 수정 완료.

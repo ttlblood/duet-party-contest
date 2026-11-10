@@ -1,6 +1,6 @@
 /**
  * 듀엣 노래 대회 (Duet Party Contest) 메인 백엔드 서버
- * Express + Socket.IO 기반 실시간 파티 플랫폼
+ * 방(Room) 기반 멀티 대회 시스템 및 관리자(Host) 권한 제어 지원
  */
 
 const express = require('express');
@@ -8,6 +8,7 @@ const http = require('http');
 const { Server } = require('socket.io');
 const path = require('path');
 const os = require('os');
+const crypto = require('crypto');
 const QRCode = require('qrcode');
 
 const app = express();
@@ -28,7 +29,6 @@ function getLocalIpAddress() {
   const interfaces = os.networkInterfaces();
   for (const name of Object.keys(interfaces)) {
     for (const iface of interfaces[name]) {
-      // IPv4이면서 내부 루프백 주소가 아닌 IP 선택
       if (iface.family === 'IPv4' && !iface.internal) {
         return iface.address;
       }
@@ -38,71 +38,81 @@ function getLocalIpAddress() {
 }
 
 const localIp = getLocalIpAddress();
-// 외부 공개 URL 환경변수(PUBLIC_URL)가 있으면 우선 적용 (클라우드 배포 및 터널 지원)
+// 외부 공개 URL 환경변수(PUBLIC_URL)가 있으면 우선 적용 (Cloudflare Tunnel 및 배포 지원)
 const serverUrl = process.env.PUBLIC_URL || `http://${localIp}:${PORT}`;
-let qrCodeDataUrl = '';
 
-// 서버 시작 시 QR 코드 생성
-QRCode.toDataURL(serverUrl, { margin: 2, scale: 6 }, (err, url) => {
-  if (!err) {
-    qrCodeDataUrl = url;
+// 6자리 가독성 높은 영문/숫자 방 코드 생성 함수
+function generateRoomCode() {
+  const chars = '23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz';
+  let code = '';
+  for (let i = 0; i < 6; i++) {
+    code += chars.charAt(Math.floor(Math.random() * chars.length));
   }
-});
+  return code;
+}
 
 /**
- * 전역 상태 관리 객체
+ * 룸(Room) 기반 전체 상태 관리 객체
+ * rooms[roomCode] = { ... }
  */
-const state = {
-  // 접속자 정보: { [socketId]: { id, name, isReady } }
-  users: {},
-  // 등록된 팀 목록: [ { id, member1, member2, songTitle, rawScores: {}, avgScore: null, status: 'waiting' | 'scored' } ]
-  teams: [],
-  // 현재 무대 순번 (인덱스)
-  currentTeamIndex: 0,
-  // 게임 전체 상태: 'LOBBY' | 'CONTEST' | 'SCORING' | 'COUNTDOWN' | 'RESULT'
-  gameStatus: 'LOBBY',
-  // 채점 타이머 (초)
-  scoringTimeLeft: 30,
-  // 10초 역카운트다운 타이머 (초)
-  countdownTimeLeft: 10,
-};
+const rooms = {};
 
-let scoringTimerInterval = null;
-let countdownTimerInterval = null;
+// 소켓 ID가 속한 방 코드 역참조 맵: socketRoomMap[socketId] = roomCode
+const socketRoomMap = {};
 
-// 전체 클라이언트에게 최신 게임 상태 브로드캐스트
-function broadcastState() {
-  io.emit('state_update', {
-    users: Object.values(state.users),
-    teams: state.teams,
-    currentTeamIndex: state.currentTeamIndex,
-    gameStatus: state.gameStatus,
-    scoringTimeLeft: state.scoringTimeLeft,
-    countdownTimeLeft: state.countdownTimeLeft,
-    serverUrl,
-    qrCodeDataUrl
+// 특정 방의 QR 코드 생성 함수 (Promise)
+async function generateRoomQRCode(roomCode) {
+  const targetUrl = `${serverUrl}/${roomCode}`;
+  try {
+    return await QRCode.toDataURL(targetUrl, { margin: 2, scale: 6 });
+  } catch (err) {
+    console.error('QR 코드 생성 오류:', err);
+    return '';
+  }
+}
+
+// 특정 방의 최신 상태 브로드캐스트 함수
+function broadcastRoomState(roomCode) {
+  const room = rooms[roomCode];
+  if (!room) return;
+
+  io.to(roomCode).emit('state_update', {
+    roomCode: room.id,
+    title: room.title,
+    hostName: room.hostName,
+    users: Object.values(room.users),
+    teams: room.teams,
+    currentTeamIndex: room.currentTeamIndex,
+    gameStatus: room.gameStatus,
+    scoringTimeLeft: room.scoringTimeLeft,
+    countdownTimeLeft: room.countdownTimeLeft,
+    roomUrl: `${serverUrl}/${roomCode}`,
+    qrCodeDataUrl: room.qrCodeDataUrl
   });
 }
 
-// 30초 채점 마감 처리 함수
-function finalizeScoring() {
-  if (scoringTimerInterval) {
-    clearInterval(scoringTimerInterval);
-    scoringTimerInterval = null;
+// 특정 방의 30초 채점 마감 처리 함수
+function finalizeRoomScoring(roomCode) {
+  const room = rooms[roomCode];
+  if (!room) return;
+
+  if (room.scoringTimerInterval) {
+    clearInterval(room.scoringTimerInterval);
+    room.scoringTimerInterval = null;
   }
 
-  const currentTeam = state.teams[state.currentTeamIndex];
+  const currentTeam = room.teams[room.currentTeamIndex];
   if (!currentTeam) return;
 
   // 채점 참여 대상자(팀원 2명 제외) 목록 추출
-  const eligibleUsers = Object.values(state.users).filter(u => 
+  const eligibleUsers = Object.values(room.users).filter(u => 
     u.name !== currentTeam.member1 && u.name !== currentTeam.member2
   );
 
-  // 미입력자에게 기본 5점 부여 (30초 내 미입력 규칙)
+  // 미입력자에게 기본 5점 부여 (30초 내 미선택 규칙)
   eligibleUsers.forEach(u => {
     if (currentTeam.rawScores[u.id] === undefined) {
-      currentTeam.rawScores[u.id] = 5; // 미입력 시 중간 점수인 5점 부여
+      currentTeam.rawScores[u.id] = 5;
     }
   });
 
@@ -112,18 +122,16 @@ function finalizeScoring() {
     const sum = scoresArray.reduce((acc, cur) => acc + cur, 0);
     currentTeam.avgScore = parseFloat((sum / scoresArray.length).toFixed(2));
   } else {
-    currentTeam.avgScore = 5.00; // 참가자가 없는 특수 상황 대비
+    currentTeam.avgScore = 5.00;
   }
 
   currentTeam.status = 'scored';
-  state.gameStatus = 'CONTEST';
-  state.scoringTimeLeft = 30;
+  room.gameStatus = 'CONTEST';
+  room.scoringTimeLeft = 30;
 
-  // 전체 팀이 완료되었는지 확인
-  const allTeamsFinished = state.teams.every(t => t.status === 'scored');
+  const allTeamsFinished = room.teams.every(t => t.status === 'scored');
 
-  // 점수 결과 이벤트 전송
-  io.emit('score_revealed', {
+  io.to(roomCode).emit('score_revealed', {
     teamId: currentTeam.id,
     teamName: `${currentTeam.member1} & ${currentTeam.member2}`,
     songTitle: currentTeam.songTitle,
@@ -133,47 +141,134 @@ function finalizeScoring() {
     allTeamsFinished,
   });
 
-  broadcastState();
+  broadcastRoomState(roomCode);
 }
 
-// Socket.io 연결 이벤트 핸들러
+// Express 라우팅: 방 코드 경로로 접속 시 index.html 제공
+app.get('/:roomCode', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// Socket.IO 이벤트 리스너
 io.on('connection', (socket) => {
-  // 연결 시 초기 상태 전송
-  socket.emit('state_update', {
-    users: Object.values(state.users),
-    teams: state.teams,
-    currentTeamIndex: state.currentTeamIndex,
-    gameStatus: state.gameStatus,
-    scoringTimeLeft: state.scoringTimeLeft,
-    countdownTimeLeft: state.countdownTimeLeft,
-    serverUrl,
-    qrCodeDataUrl
-  });
 
-  // 1. 사용자 입장 및 닉네임 등록
-  socket.on('user_join', ({ name }) => {
-    const trimmedName = (name || '').trim();
-    if (!trimmedName) return;
+  // 1. 새 듀엣 대회 방 생성 (개설자가 관리자가 됨)
+  socket.on('create_room', async ({ title, hostName }, callback) => {
+    const trimmedTitle = (title || '싱어게인 듀엣 노래 대회').trim();
+    const trimmedHostName = (hostName || '관리자').trim();
 
-    state.users[socket.id] = {
-      id: socket.id,
-      name: trimmedName,
-      isReady: false
+    // 중복되지 않는 6자리 방 코드 생성
+    let roomCode = generateRoomCode();
+    while (rooms[roomCode]) {
+      roomCode = generateRoomCode();
+    }
+
+    const adminToken = crypto.randomUUID();
+    const qrData = await generateRoomQRCode(roomCode);
+
+    // 새 방 초기화
+    rooms[roomCode] = {
+      id: roomCode,
+      title: trimmedTitle,
+      hostName: trimmedHostName,
+      adminToken: adminToken,
+      users: {},
+      teams: [],
+      currentTeamIndex: 0,
+      gameStatus: 'LOBBY',
+      scoringTimeLeft: 30,
+      countdownTimeLeft: 10,
+      scoringTimerInterval: null,
+      countdownTimerInterval: null,
+      qrCodeDataUrl: qrData,
+      createdAt: Date.now()
     };
 
-    broadcastState();
+    // 소켓을 해당 방에 조인
+    socket.join(roomCode);
+    socketRoomMap[socket.id] = roomCode;
+
+    // 개설자를 관리자로 사용자 등록
+    rooms[roomCode].users[socket.id] = {
+      id: socket.id,
+      name: trimmedHostName,
+      isReady: true,
+      isHost: true
+    };
+
+    if (typeof callback === 'function') {
+      callback({
+        success: true,
+        roomCode,
+        adminToken,
+        title: trimmedTitle,
+        hostName: trimmedHostName
+      });
+    }
+
+    broadcastRoomState(roomCode);
   });
 
-  // 2. 레디(Ready) 토글
+  // 2. 방 입장 요청 (참가자 또는 새로고침한 관리자)
+  socket.on('join_room', ({ roomCode, userName, adminToken }, callback) => {
+    const room = rooms[roomCode];
+    if (!room) {
+      if (typeof callback === 'function') {
+        callback({ success: false, message: '존재하지 않거나 종료된 대회 방입니다.' });
+      }
+      return socket.emit('error_message', '존재하지 않거나 종료된 대회 방입니다.');
+    }
+
+    const trimmedName = (userName || '').trim();
+    if (!trimmedName) {
+      if (typeof callback === 'function') {
+        callback({ success: false, message: '이름을 입력해주세요.' });
+      }
+      return;
+    }
+
+    socket.join(roomCode);
+    socketRoomMap[socket.id] = roomCode;
+
+    // 관리자 토큰 검증
+    const isHost = (adminToken && adminToken === room.adminToken) || (trimmedName === room.hostName && !Object.values(room.users).some(u => u.isHost));
+
+    room.users[socket.id] = {
+      id: socket.id,
+      name: trimmedName,
+      isReady: isHost ? true : false,
+      isHost: isHost
+    };
+
+    if (typeof callback === 'function') {
+      callback({
+        success: true,
+        roomCode,
+        isHost,
+        title: room.title,
+        hostName: room.hostName
+      });
+    }
+
+    broadcastRoomState(roomCode);
+  });
+
+  // 3. 레디(Ready) 토글
   socket.on('toggle_ready', () => {
-    if (state.users[socket.id]) {
-      state.users[socket.id].isReady = !state.users[socket.id].isReady;
-      broadcastState();
+    const roomCode = socketRoomMap[socket.id];
+    const room = rooms[roomCode];
+    if (room && room.users[socket.id]) {
+      room.users[socket.id].isReady = !room.users[socket.id].isReady;
+      broadcastRoomState(roomCode);
     }
   });
 
-  // 3. 듀엣 팀 및 곡목 등록 (1인이 여러 팀에 중복 출전 가능)
+  // 4. 듀엣 팀 및 곡목 등록
   socket.on('create_team', ({ member1, member2, songTitle }) => {
+    const roomCode = socketRoomMap[socket.id];
+    const room = rooms[roomCode];
+    if (!room) return;
+
     const m1 = (member1 || '').trim();
     const m2 = (member2 || '').trim();
     const song = (songTitle || '').trim();
@@ -196,89 +291,94 @@ io.on('connection', (socket) => {
       status: 'waiting'
     };
 
-    state.teams.push(newTeam);
-    broadcastState();
+    room.teams.push(newTeam);
+    broadcastRoomState(roomCode);
   });
 
-  // 4. 팀 삭제 (로비 단계에서 잘못 등록했을 때)
+  // 5. 팀 삭제
   socket.on('delete_team', ({ teamId }) => {
-    if (state.gameStatus === 'LOBBY') {
-      state.teams = state.teams.filter(t => t.id !== teamId);
-      broadcastState();
+    const roomCode = socketRoomMap[socket.id];
+    const room = rooms[roomCode];
+    if (room && room.gameStatus === 'LOBBY') {
+      room.teams = room.teams.filter(t => t.id !== teamId);
+      broadcastRoomState(roomCode);
     }
   });
 
-  // 5. 대회 시작 (로비에서 콘테스트 스테이지로 전환)
+  // 6. 대회 시작하기 (관리자 또는 참가자)
   socket.on('start_contest', () => {
-    if (state.teams.length === 0) {
+    const roomCode = socketRoomMap[socket.id];
+    const room = rooms[roomCode];
+    if (!room) return;
+
+    if (room.teams.length === 0) {
       return socket.emit('error_message', '최소 1팀 이상 등록되어야 대회를 시작할 수 있습니다.');
     }
 
-    state.gameStatus = 'CONTEST';
-    state.currentTeamIndex = 0;
-    broadcastState();
+    room.gameStatus = 'CONTEST';
+    room.currentTeamIndex = 0;
+    broadcastRoomState(roomCode);
   });
 
-  // 6. 팀원의 [점수 받기] 클릭 -> 30초 채점 모드 시작
+  // 7. 팀원의 [점수 받기] 클릭 -> 30초 채점 시작
   socket.on('request_score', () => {
-    const currentTeam = state.teams[state.currentTeamIndex];
-    if (!currentTeam || state.gameStatus !== 'CONTEST') return;
+    const roomCode = socketRoomMap[socket.id];
+    const room = rooms[roomCode];
+    if (!room || room.gameStatus !== 'CONTEST') return;
 
-    // 해당 팀원인지 확인 (진행 편의를 위해 사용자 검증 및 채점 전환)
-    const currentUser = state.users[socket.id];
-    if (!currentUser) return;
+    const currentTeam = room.teams[room.currentTeamIndex];
+    if (!currentTeam) return;
 
-    // 팀원이거나 누구나 점수받기를 시작할 수 있도록 허용하되 팀원 우선
     currentTeam.rawScores = {};
-    state.gameStatus = 'SCORING';
-    state.scoringTimeLeft = 30;
+    room.gameStatus = 'SCORING';
+    room.scoringTimeLeft = 30;
 
-    // 30초 카운트다운 타이머 시작
-    if (scoringTimerInterval) clearInterval(scoringTimerInterval);
+    if (room.scoringTimerInterval) clearInterval(room.scoringTimerInterval);
 
-    scoringTimerInterval = setInterval(() => {
-      state.scoringTimeLeft -= 1;
-      io.emit('scoring_tick', { timeLeft: state.scoringTimeLeft });
+    room.scoringTimerInterval = setInterval(() => {
+      room.scoringTimeLeft -= 1;
+      io.to(roomCode).emit('scoring_tick', { timeLeft: room.scoringTimeLeft });
 
-      if (state.scoringTimeLeft <= 0) {
-        finalizeScoring();
+      if (room.scoringTimeLeft <= 0) {
+        finalizeRoomScoring(roomCode);
       }
     }, 1000);
 
-    // 가상 봇 참가자가 있는 경우 1~2초 내 자동으로 7~10점 투표 처리
-    Object.values(state.users).forEach(u => {
+    // 가상 봇 참가자가 있는 경우 자동 점수 투표
+    Object.values(room.users).forEach(u => {
       if (u.isBot && u.name !== currentTeam.member1 && u.name !== currentTeam.member2) {
         setTimeout(() => {
-          if (state.gameStatus === 'SCORING' && currentTeam.rawScores[u.id] === undefined) {
-            currentTeam.rawScores[u.id] = Math.floor(Math.random() * 4) + 7; // 7, 8, 9, 10점 중 랜덤 부여
-            
-            const eligibleUsers = Object.values(state.users).filter(usr => 
+          if (room.gameStatus === 'SCORING' && currentTeam.rawScores[u.id] === undefined) {
+            currentTeam.rawScores[u.id] = Math.floor(Math.random() * 4) + 7;
+            const eligibleUsers = Object.values(room.users).filter(usr => 
               usr.name !== currentTeam.member1 && usr.name !== currentTeam.member2
             );
             const submittedCount = Object.keys(currentTeam.rawScores).length;
 
             if (submittedCount >= eligibleUsers.length && eligibleUsers.length > 0) {
-              finalizeScoring();
+              finalizeRoomScoring(roomCode);
             } else {
-              broadcastState();
+              broadcastRoomState(roomCode);
             }
           }
         }, Math.random() * 1200 + 400);
       }
     });
 
-    broadcastState();
+    broadcastRoomState(roomCode);
   });
 
-  // 7. 관객의 점수 제출 (1~10점)
+  // 8. 관객 점수 제출 (1~10점)
   socket.on('submit_score', ({ score }) => {
-    if (state.gameStatus !== 'SCORING') return;
+    const roomCode = socketRoomMap[socket.id];
+    const room = rooms[roomCode];
+    if (!room || room.gameStatus !== 'SCORING') return;
 
-    const currentTeam = state.teams[state.currentTeamIndex];
-    const user = state.users[socket.id];
+    const currentTeam = room.teams[room.currentTeamIndex];
+    const user = room.users[socket.id];
     if (!currentTeam || !user) return;
 
-    // 출전 팀원(본인)은 점수 제출 불가
+    // 본인 무대 투표 차단
     if (user.name === currentTeam.member1 || user.name === currentTeam.member2) {
       return socket.emit('error_message', '본인 무대에는 점수를 줄 수 없습니다.');
     }
@@ -286,103 +386,115 @@ io.on('connection', (socket) => {
     const numScore = parseInt(score, 10);
     if (isNaN(numScore) || numScore < 1 || numScore > 10) return;
 
-    // 점수 저장
     currentTeam.rawScores[user.id] = numScore;
-
-    // 점수 제출 완료 알림
     socket.emit('score_submitted_ack', { score: numScore });
 
-    // 유효한 투표자 전원이 제출했는지 확인
-    const eligibleUsers = Object.values(state.users).filter(u => 
+    const eligibleUsers = Object.values(room.users).filter(u => 
       u.name !== currentTeam.member1 && u.name !== currentTeam.member2
     );
-
     const submittedCount = Object.keys(currentTeam.rawScores).length;
 
-    // 전원 제출 시 즉시 마감
     if (submittedCount >= eligibleUsers.length && eligibleUsers.length > 0) {
-      finalizeScoring();
+      finalizeRoomScoring(roomCode);
     } else {
-      broadcastState();
+      broadcastRoomState(roomCode);
     }
   });
 
-  // 8. 다음 팀 무대로 넘어가기
+  // 9. 다음 팀 무대로
   socket.on('next_team', () => {
-    if (state.currentTeamIndex < state.teams.length - 1) {
-      state.currentTeamIndex += 1;
-      state.gameStatus = 'CONTEST';
-      broadcastState();
+    const roomCode = socketRoomMap[socket.id];
+    const room = rooms[roomCode];
+    if (!room) return;
+
+    if (room.currentTeamIndex < room.teams.length - 1) {
+      room.currentTeamIndex += 1;
+      room.gameStatus = 'CONTEST';
+      broadcastRoomState(roomCode);
     }
   });
 
-  // 9. [결과 확인하기] 클릭 -> 10초 역카운트다운 시작
+  // 10. 결과 확인 10초 역카운트다운 시작
   socket.on('start_result_countdown', () => {
-    // 모든 팀 채점이 완료되었는지 체크
-    const allFinished = state.teams.every(t => t.status === 'scored');
+    const roomCode = socketRoomMap[socket.id];
+    const room = rooms[roomCode];
+    if (!room) return;
+
+    const allFinished = room.teams.every(t => t.status === 'scored');
     if (!allFinished) {
       return socket.emit('error_message', '아직 채점이 완료되지 않은 팀이 있습니다.');
     }
 
-    state.gameStatus = 'COUNTDOWN';
-    state.countdownTimeLeft = 10;
+    room.gameStatus = 'COUNTDOWN';
+    room.countdownTimeLeft = 10;
 
-    if (countdownTimerInterval) clearInterval(countdownTimerInterval);
+    if (room.countdownTimerInterval) clearInterval(room.countdownTimerInterval);
 
-    // 10초 타이머 동작
-    countdownTimerInterval = setInterval(() => {
-      state.countdownTimeLeft -= 1;
-      io.emit('countdown_tick', { timeLeft: state.countdownTimeLeft });
+    room.countdownTimerInterval = setInterval(() => {
+      room.countdownTimeLeft -= 1;
+      io.to(roomCode).emit('countdown_tick', { timeLeft: room.countdownTimeLeft });
 
-      if (state.countdownTimeLeft <= 0) {
-        clearInterval(countdownTimerInterval);
-        countdownTimerInterval = null;
-        state.gameStatus = 'RESULT';
-        broadcastState();
+      if (room.countdownTimeLeft <= 0) {
+        clearInterval(room.countdownTimerInterval);
+        room.countdownTimerInterval = null;
+        room.gameStatus = 'RESULT';
+        broadcastRoomState(roomCode);
       }
     }, 1000);
 
-    broadcastState();
+    broadcastRoomState(roomCode);
   });
 
-  // 10. 대회 초기화 (새로운 게임 시작)
+  // 11. 대회 초기화 (관리자 전용 기능)
   socket.on('reset_contest', () => {
-    if (scoringTimerInterval) clearInterval(scoringTimerInterval);
-    if (countdownTimerInterval) clearInterval(countdownTimerInterval);
+    const roomCode = socketRoomMap[socket.id];
+    const room = rooms[roomCode];
+    if (!room) return;
 
-    state.teams = [];
-    state.currentTeamIndex = 0;
-    state.gameStatus = 'LOBBY';
-    state.scoringTimeLeft = 30;
-    state.countdownTimeLeft = 10;
+    const user = room.users[socket.id];
+    // 관리자(방장) 권한 확인
+    if (!user || !user.isHost) {
+      return socket.emit('error_message', '대회 초기화는 관리자(방장)만 가능합니다.');
+    }
 
-    // 가상 봇 제거 및 실제 접속 유저만 유지
-    for (const id in state.users) {
-      if (state.users[id].isBot) {
-        delete state.users[id];
+    if (room.scoringTimerInterval) clearInterval(room.scoringTimerInterval);
+    if (room.countdownTimerInterval) clearInterval(room.countdownTimerInterval);
+
+    room.teams = [];
+    room.currentTeamIndex = 0;
+    room.gameStatus = 'LOBBY';
+    room.scoringTimeLeft = 30;
+    room.countdownTimeLeft = 10;
+
+    for (const id in room.users) {
+      if (room.users[id].isBot) {
+        delete room.users[id];
       } else {
-        state.users[id].isReady = false;
+        room.users[id].isReady = room.users[id].isHost ? true : false;
       }
     }
 
-    broadcastState();
+    broadcastRoomState(roomCode);
   });
 
-  // 11. [데모 모드] 가상 참석자 10명 및 듀엣 4팀 자동 생성 (UI 화면 사전 점검용)
+  // 12. 데모용 10명 & 4팀 생성
   socket.on('populate_demo_data', () => {
+    const roomCode = socketRoomMap[socket.id];
+    const room = rooms[roomCode];
+    if (!room) return;
+
     const demoNames = [
       '지민', '정국', '태형', '민지', '하니',
       '다니엘', '유진', '원영', '카리나', '윈터'
     ];
 
-    // 기존 봇 정리 후 10명 생성
-    for (const id in state.users) {
-      if (state.users[id].isBot) delete state.users[id];
+    for (const id in room.users) {
+      if (room.users[id].isBot) delete room.users[id];
     }
 
     demoNames.forEach((name, idx) => {
-      const botId = `bot_${idx + 1}`;
-      state.users[botId] = {
+      const botId = `bot_${roomCode}_${idx + 1}`;
+      room.users[botId] = {
         id: botId,
         name: name,
         isReady: true,
@@ -390,8 +502,7 @@ io.on('connection', (socket) => {
       };
     });
 
-    // 듀엣 4팀 등록 (1인이 여러 팀에 중복 출전하는 규칙 완벽 반영)
-    state.teams = [
+    room.teams = [
       {
         id: 'team_demo_1',
         member1: '지민',
@@ -404,7 +515,7 @@ io.on('connection', (socket) => {
       {
         id: 'team_demo_2',
         member1: '태형',
-        member2: '지민', // 지민 중복 출전!
+        member2: '지민',
         songTitle: '잔소리 (아이유 & 임슬옹)',
         rawScores: {},
         avgScore: null,
@@ -430,23 +541,26 @@ io.on('connection', (socket) => {
       }
     ];
 
-    state.currentTeamIndex = 0;
-    state.gameStatus = 'LOBBY';
-    broadcastState();
+    room.currentTeamIndex = 0;
+    room.gameStatus = 'LOBBY';
+    broadcastRoomState(roomCode);
   });
 
-  // 연결 해제 시 처리
+  // 연결 종료 시 처리
   socket.on('disconnect', () => {
-    delete state.users[socket.id];
-    broadcastState();
+    const roomCode = socketRoomMap[socket.id];
+    if (roomCode && rooms[roomCode]) {
+      delete rooms[roomCode].users[socket.id];
+      delete socketRoomMap[socket.id];
+      broadcastRoomState(roomCode);
+    }
   });
 });
 
-// 서버 기동
+// 서버 실행
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`===============================================`);
-  console.log(`🎤 듀엣 노래 대회 파티 서버가 실행되었습니다!`);
-  console.log(`🌐 접속 주소: ${serverUrl}`);
-  console.log(`📱 스마트폰으로 동일 Wi-Fi에서 위 주소나 QR 코드로 접속하세요.`);
+  console.log(`🎤 싱어게인 듀엣 노래 대회 서버 실행 완료!`);
+  console.log(`🌐 서비스 메인 주소: ${serverUrl}`);
   console.log(`===============================================`);
 });

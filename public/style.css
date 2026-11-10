@@ -1436,3 +1436,100 @@ body.is-host .guest-wait-box {
   font-size: 13px;
   line-height: 1.6;
 }
+
+/* ================================================= */
+/* STAGE NOW 출전 팀 순서 선택 목록 */
+/* ================================================= */
+.stage-selector-card {
+  padding: 14px 16px;
+  margin-bottom: 14px;
+}
+
+.stage-team-chips-container {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.stage-team-chip {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-glass);
+  border-radius: 12px;
+  padding: 10px 14px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.stage-team-chip:hover {
+  background: rgba(255, 255, 255, 0.1);
+  transform: translateY(-1px);
+}
+
+.stage-team-chip.active-stage {
+  border: 2px solid var(--neon-cyan) !important;
+  background: rgba(0, 240, 255, 0.18) !important;
+  box-shadow: 0 0 18px rgba(0, 240, 255, 0.45);
+}
+
+.chip-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: left;
+}
+
+.chip-names {
+  font-size: 14px;
+  font-weight: 800;
+  color: #fff;
+}
+
+.chip-song {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.chip-status-badge {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 10px;
+  white-space: nowrap;
+}
+
+.chip-status-waiting {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-dim);
+  border: 1px solid var(--border-glass);
+}
+
+.chip-status-current {
+  background: rgba(0, 240, 255, 0.25);
+  color: var(--neon-cyan);
+  border: 1px solid var(--neon-cyan);
+  font-weight: 800;
+}
+
+.chip-status-scored {
+  background: rgba(255, 230, 0, 0.18);
+  color: var(--neon-yellow);
+  border: 1px solid var(--neon-yellow);
+}
+
+.choose-next-hint {
+  font-size: 14px;
+  color: var(--neon-cyan);
+  font-weight: 700;
+  text-align: center;
+  padding: 10px 0;
+  animation: pulseHint 1.5s infinite alternate;
+}
+
+@keyframes pulseHint {
+  0% { transform: translateY(0); opacity: 0.8; }
+  100% { transform: translateY(-3px); opacity: 1; }
+}

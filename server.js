@@ -326,6 +326,19 @@ io.on('connection', (socket) => {
     broadcastRoomState(roomCode);
   });
 
+  // 6-1. 무대 진행할 팀 선택 (순서 자유 변경)
+  socket.on('select_stage_team', ({ teamId }) => {
+    const roomCode = socketRoomMap[socket.id];
+    const room = rooms[roomCode];
+    if (!room || room.gameStatus !== 'CONTEST') return;
+
+    const teamIndex = room.teams.findIndex(t => t.id === teamId);
+    if (teamIndex !== -1) {
+      room.currentTeamIndex = teamIndex;
+      broadcastRoomState(roomCode);
+    }
+  });
+
   // 7. 팀원 또는 관리자의 [점수 받기] 클릭 -> 30초 채점 시작
   socket.on('request_score', () => {
     const roomCode = socketRoomMap[socket.id];

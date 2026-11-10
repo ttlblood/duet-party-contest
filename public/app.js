@@ -570,11 +570,13 @@ scoreButtons.forEach(btn => {
   });
 });
 
-// 다음 무대 버튼
-nextTeamBtn.addEventListener('click', () => {
-  playClickSound();
-  socket.emit('next_team');
-});
+// 다음 무대 버튼 (목록 선택 방식으로 전환됨에 따른 호환 처리)
+if (nextTeamBtn) {
+  nextTeamBtn.addEventListener('click', () => {
+    playClickSound();
+    socket.emit('next_team');
+  });
+}
 
 // 최종 결과 확인하기 버튼 (10초 카운트다운 시작)
 revealFinalBtn.addEventListener('click', () => {
@@ -613,15 +615,18 @@ socket.on('score_revealed', (result) => {
   scoringPanel.style.display = 'none';
   stageResultBox.style.display = 'block';
 
+  maskedScoreText.textContent = `${result.integerPart}.??`;
+  const chooseHint = document.getElementById('choose-next-hint');
+
   if (!result.allTeamsFinished) {
-    maskedScoreText.textContent = `${result.integerPart}.??`;
     scoreHintText.textContent = '🤫 전체 팀이 끝나지 않아 소수점은 비밀입니다!';
-    nextTeamBtn.style.display = 'block';
+    if (chooseHint) chooseHint.style.display = 'block';
+    if (nextTeamBtn) nextTeamBtn.style.display = 'none';
     revealFinalBtn.style.display = 'none';
   } else {
-    maskedScoreText.textContent = `${result.integerPart}.??`;
     scoreHintText.textContent = '🎉 모든 무대가 끝났습니다! 최종 결과 확인하기를 눌러주세요!';
-    nextTeamBtn.style.display = 'none';
+    if (chooseHint) chooseHint.style.display = 'none';
+    if (nextTeamBtn) nextTeamBtn.style.display = 'none';
     revealFinalBtn.style.display = 'block';
   }
 });
@@ -767,9 +772,60 @@ function renderContestStage(teams, currentTeamIndex, gameStatus) {
   const currentTeam = teams[currentTeamIndex];
   if (!currentTeam) return;
 
-  currentRoundText.textContent = `ROUND ${currentTeamIndex + 1} / ${teams.length}`;
+  currentRoundText.textContent = `STAGE ${currentTeamIndex + 1} / ${teams.length}`;
   currentTeamMembers.textContent = `${currentTeam.member1} & ${currentTeam.member2}`;
   currentTeamSong.textContent = currentTeam.songTitle;
+
+  // 1. 출전 팀 목록 칩 렌더링 (순서 자유 변경 지원)
+  const stageTeamChips = document.getElementById('stage-team-chips');
+  const stageCompletedCount = document.getElementById('stage-completed-count');
+  const stageTotalCount = document.getElementById('stage-total-count');
+
+  if (stageTeamChips) {
+    const scoredCount = teams.filter(t => t.status === 'scored').length;
+    if (stageCompletedCount) stageCompletedCount.textContent = scoredCount;
+    if (stageTotalCount) stageTotalCount.textContent = teams.length;
+
+    stageTeamChips.innerHTML = '';
+    teams.forEach((t, idx) => {
+      const chip = document.createElement('div');
+      chip.className = 'stage-team-chip';
+      const isCurrent = (idx === currentTeamIndex);
+      const isScored = (t.status === 'scored');
+
+      if (isCurrent) chip.classList.add('active-stage');
+
+      let badgeHtml = '';
+      if (isCurrent) {
+        badgeHtml = '<span class="chip-status-badge chip-status-current">🎤 지금 무대</span>';
+      } else if (isScored) {
+        badgeHtml = `<span class="chip-status-badge chip-status-scored">✅ ${Math.floor(t.avgScore)}.??점</span>`;
+      } else {
+        badgeHtml = '<span class="chip-status-badge chip-status-waiting">대기 중 (선택 가능)</span>';
+      }
+
+      chip.innerHTML = `
+        <div class="chip-info">
+          <div class="chip-names">${idx + 1}팀: ${t.member1} & ${t.member2}</div>
+          <div class="chip-song">🎵 ${t.songTitle}</div>
+        </div>
+        ${badgeHtml}
+      `;
+
+      // 칩 탭/클릭 시 해당 팀 무대로 전환!
+      chip.addEventListener('click', () => {
+        if (gameStatus === 'SCORING') {
+          showToast('채점이 진행 중일 때는 무대를 변경할 수 없습니다.');
+          return;
+        }
+        playClickSound();
+        socket.emit('select_stage_team', { teamId: t.id });
+        showToast(`[${idx + 1}팀: ${t.member1} & ${t.member2}] 무대로 선택되었습니다.`);
+      });
+
+      stageTeamChips.appendChild(chip);
+    });
+  }
 
   const isPerformer = (myUserName === currentTeam.member1 || myUserName === currentTeam.member2);
   const canStartScoring = isPerformer || isHost;
@@ -786,6 +842,9 @@ function renderContestStage(teams, currentTeamIndex, gameStatus) {
       audienceWaitScoreBox.style.display = 'block';
     }
   }
+
+  const chooseHint = document.getElementById('choose-next-hint');
+  const allTeamsFinished = teams.every(t => t.status === 'scored');
 
   if (gameStatus === 'SCORING') {
     scoringPanel.style.display = 'block';
@@ -810,6 +869,14 @@ function renderContestStage(teams, currentTeamIndex, gameStatus) {
     if (currentTeam.status === 'scored') {
       scoringPanel.style.display = 'none';
       stageResultBox.style.display = 'block';
+
+      if (allTeamsFinished) {
+        if (chooseHint) chooseHint.style.display = 'none';
+        revealFinalBtn.style.display = 'block';
+      } else {
+        if (chooseHint) chooseHint.style.display = 'block';
+        revealFinalBtn.style.display = 'none';
+      }
     } else {
       scoringPanel.style.display = 'none';
       stageResultBox.style.display = 'none';

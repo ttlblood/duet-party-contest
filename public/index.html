@@ -188,8 +188,19 @@
       <section id="contest-view" class="view-section">
         <!-- 현재 무대 정보 배너 -->
         <div class="stage-banner">
-          <div class="round-badge" id="current-round-text">ROUND 1 / 4</div>
+          <div class="round-badge" id="current-round-text">STAGE 1 / 4</div>
           <div class="stage-neon-title">STAGE NOW</div>
+        </div>
+
+        <!-- 출전 팀 선택 목록 카드 (순서 자유 변경 가능) -->
+        <div class="card glass-card stage-selector-card">
+          <div class="card-header" style="margin-bottom: 8px;">
+            <h3>🎵 출전 팀 목록 (<span id="stage-completed-count">0</span>/<span id="stage-total-count">0</span> 채점 완료)</h3>
+            <span class="badge-tip">💡 원하는 팀을 탭하여 무대를 진행하세요!</span>
+          </div>
+          <div id="stage-team-chips" class="stage-team-chips-container">
+            <!-- 출전 팀 카드들이 동적으로 추가됨 -->
+          </div>
         </div>
 
         <!-- 현재 노래 부르는 듀엣 팀 카드 -->
@@ -280,11 +291,9 @@
               🤫 전체 팀이 끝나지 않아 소수점은 비밀입니다!
             </p>
           </div>
-          <!-- 다음 팀 무대로 넘어가기 버튼 -->
+          <!-- 다음 팀 무대로 넘어가기 또는 최종 결과 확인 -->
           <div class="stage-nav-actions">
-            <button id="next-team-btn" class="btn btn-party btn-large">
-              다음 듀엣 팀 무대로 ➡️
-            </button>
+            <p id="choose-next-hint" class="choose-next-hint">👆 상단 출전 팀 목록에서 다음 노래 부를 팀을 탭하세요!</p>
             <button id="reveal-final-btn" class="btn btn-neon-pink btn-pulse btn-large" style="display: none;">
               🏆 모든 팀 종료! 최종 결과 확인하기!
             </button>

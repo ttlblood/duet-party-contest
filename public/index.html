@@ -201,12 +201,20 @@
             <span id="current-team-song" class="song-name">그 남자 그 여자</span>
           </div>
 
-          <!-- 노래 부른 뒤 해당 팀원이 누르는 점수 받기 버튼 -->
+          <!-- 노래 부른 뒤 해당 팀원 또는 관리자가 누르는 점수 받기 버튼 -->
           <div id="request-score-box" class="action-box">
-            <p class="action-desc">노래가 끝났나요? 팀원 중 한 명이 [점수 받기]를 눌러주세요!</p>
-            <button id="request-score-btn" class="btn btn-party btn-pulse btn-large">
-              📢 노래 끝! 점수 받기 시작!
-            </button>
+            <!-- 팀원 또는 관리자에게만 노출되는 점수 받기 영역 -->
+            <div id="authorized-score-starter-box">
+              <p class="action-desc">노래가 끝났나요? 팀원 또는 방장이 [점수 받기]를 눌러주세요!</p>
+              <button id="request-score-btn" class="btn btn-party btn-pulse btn-large">
+                📢 노래 끝! 점수 받기 시작!
+              </button>
+            </div>
+
+            <!-- 일반 관객에게 노출되는 대기 안내 영역 -->
+            <div id="audience-wait-score-box" class="audience-wait-box" style="display: none;">
+              <p class="wait-desc">🎵 듀엣 무대가 진행 중입니다.<br>노래가 끝난 후 팀원 또는 방장이 [점수 받기]를 누르면 채점이 시작됩니다!</p>
+            </div>
           </div>
         </div>
 

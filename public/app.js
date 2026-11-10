@@ -772,6 +772,20 @@ function renderContestStage(teams, currentTeamIndex, gameStatus) {
   currentTeamSong.textContent = currentTeam.songTitle;
 
   const isPerformer = (myUserName === currentTeam.member1 || myUserName === currentTeam.member2);
+  const canStartScoring = isPerformer || isHost;
+
+  // 점수 받기 버튼 권한 제어 (해당 팀원 또는 관리자만 버튼 노출, 일반 관객은 대기 안내 노출)
+  const authStarterBox = document.getElementById('authorized-score-starter-box');
+  const audienceWaitScoreBox = document.getElementById('audience-wait-score-box');
+  if (authStarterBox && audienceWaitScoreBox) {
+    if (canStartScoring) {
+      authStarterBox.style.display = 'block';
+      audienceWaitScoreBox.style.display = 'none';
+    } else {
+      authStarterBox.style.display = 'none';
+      audienceWaitScoreBox.style.display = 'block';
+    }
+  }
 
   if (gameStatus === 'SCORING') {
     scoringPanel.style.display = 'block';

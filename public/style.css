@@ -1424,3 +1424,15 @@ body.is-host .host-only-btn {
 body.is-host .guest-wait-box {
   display: none !important;
 }
+
+/* 일반 관객 무대 대기 안내 상자 */
+.audience-wait-box {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px dashed rgba(255, 255, 255, 0.18);
+  border-radius: 14px;
+  padding: 14px 16px;
+  text-align: center;
+  color: var(--text-dim);
+  font-size: 13px;
+  line-height: 1.6;
+}

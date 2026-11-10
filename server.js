@@ -326,7 +326,7 @@ io.on('connection', (socket) => {
     broadcastRoomState(roomCode);
   });
 
-  // 7. 팀원의 [점수 받기] 클릭 -> 30초 채점 시작
+  // 7. 팀원 또는 관리자의 [점수 받기] 클릭 -> 30초 채점 시작
   socket.on('request_score', () => {
     const roomCode = socketRoomMap[socket.id];
     const room = rooms[roomCode];
@@ -334,6 +334,17 @@ io.on('connection', (socket) => {
 
     const currentTeam = room.teams[room.currentTeamIndex];
     if (!currentTeam) return;
+
+    const currentUser = room.users[socket.id];
+    if (!currentUser) return;
+
+    // 해당 팀원 또는 관리자(방장)만 점수 받기 시작 가능
+    const isPerformer = (currentUser.name === currentTeam.member1 || currentUser.name === currentTeam.member2);
+    const isHost = !!currentUser.isHost;
+
+    if (!isPerformer && !isHost) {
+      return socket.emit('error_message', '점수 받기는 해당 팀원 또는 관리자(방장)만 시작할 수 있습니다.');
+    }
 
     currentTeam.rawScores = {};
     room.gameStatus = 'SCORING';

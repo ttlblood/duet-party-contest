@@ -22,6 +22,8 @@ let hasSubmittedScore = false;
 let mySelectedScore = null;
 let localViewingTeamIndex = null; // 각 사용자가 개별적으로 탭해서 둘러보는 팀 인덱스 (다른 사람 화면에 영향 없음)
 let latestRoomState = null;        // 서버에서 수신한 최신 방 상태 캐시
+let previousGameStatus = null;       // 직전 게임 상태 추적 (재접속 시 중복 팡파르/폭죽 방지)
+let hasCelebratedFinalResult = false;// 최종 결과 시상식 폭죽/음성 1회성 발동 플래그
 
 // [모바일 환경 완벽 대응] 소켓 연결/재연결 시 세션 자동 복구 핸들러
 socket.on('connect', () => {
@@ -354,18 +356,22 @@ function checkInitialRoute() {
   }
 }
 
-// 방 입장 처리 함수 (공유받은 URL 접속 시)
+// 방 입장 처리 함수 (공유받은 URL 접속 및 새로고침/재접속 시)
 function initRoomJoin(roomCode) {
-  // 이전에 사용하던 이름이 있다면 입력창에 기본값으로 세팅 (수정 가능하도록 노출)
-  if (myUserName) {
-    nicknameInput.value = myUserName;
+  const adminToken = localStorage.getItem(`admin_token_${roomCode}`) || localStorage.getItem(`duet_admin_${roomCode}`);
+
+  // [사용자 요구 반영] 이미 본인 이름을 정한 멤버가 재접속하거나 새로고침할 때는 이름 정하는 화면을 절대 띄우지 않고 자동 직행!
+  if (myUserName && myUserName.trim()) {
+    nicknameModal.style.display = 'none';
+    requestJoinRoom(roomCode, myUserName.trim(), adminToken);
+    return;
   }
-  
-  // 이름을 확인 및 변경할 수 있도록 건너뛰지 않고 반드시 닉네임 입력 모달을 표시!
+
+  // 본인 이름이 없는 최초 방문자에게만 닉네임 입력 모달 노출
   nicknameModal.style.display = 'flex';
   setTimeout(() => {
     nicknameInput.focus();
-    nicknameInput.select(); // 바로 수정할 수 있도록 텍스트 전체 선택
+    nicknameInput.select();
   }, 100);
 }
 
@@ -884,6 +890,7 @@ function renderState(data) {
     stageResultBox.style.display = 'none';
     scoringPanel.style.display = 'none';
     localViewingTeamIndex = null; // 로비 진입 시 로컬 선택 인덱스 초기화
+    hasCelebratedFinalResult = false; // 새로운 대회를 위해 축하 플래그 초기화
   } else if (gameStatus === 'CONTEST' || gameStatus === 'SCORING') {
     switchView('contest');
     renderContestStage(teams, currentTeamIndex, gameStatus);
@@ -891,8 +898,17 @@ function renderState(data) {
     switchView('countdown');
   } else if (gameStatus === 'RESULT') {
     switchView('result');
-    renderFinalResults(teams);
+    // 오직 10초 카운트다운이 끝나고 시상식으로 막 전환된 최초 1회에만 폭죽과 팡파르 발동!
+    // 재접속, 새로고침, 단순 상태 동기화 시에는 렌더링만 수행하고 중복 발동 차단
+    const shouldCelebrate = (previousGameStatus === 'COUNTDOWN' && !hasCelebratedFinalResult);
+    renderFinalResults(teams, shouldCelebrate);
+    if (shouldCelebrate) {
+      hasCelebratedFinalResult = true;
+    }
   }
+
+  // 직전 상태 갱신
+  previousGameStatus = gameStatus;
 }
 
 // 파트너 선택 드롭다운 업데이트 (파트너 2에는 본인이 노출되지 않도록 필터링)
@@ -1222,7 +1238,7 @@ function renderContestStage(teams, officialTeamIndex, gameStatus) {
   }
 }
 
-function renderFinalResults(teams) {
+function renderFinalResults(teams, triggerCelebration = false) {
   const isKaraokeMode = (latestRoomState && latestRoomState.scoringMode === 'KARAOKE');
   const formatScore = (s) => {
     if (s === null || s === undefined) return isKaraokeMode ? '0점' : '0.00점';
@@ -1267,8 +1283,11 @@ function renderFinalResults(teams) {
     fullRankingList.appendChild(row);
   });
 
-  playFanfareSound();
-  launchConfetti(8);
+  // 오직 시상식으로 처음 진입한 1회에만 팡파르와 폭죽을 발사하고, 재접속/새로고침 시에는 발동 차단!
+  if (triggerCelebration) {
+    playFanfareSound();
+    launchConfetti(8);
+  }
 
   // 시상식 하단 새로운 듀엣 대회 시작하기(리셋) 버튼: 관리자(방장)만 노출 보장
   if (resetContestBtn) {

@@ -300,18 +300,19 @@ function checkInitialRoute() {
   }
 }
 
-// 방 입장 처리 함수
+// 방 입장 처리 함수 (공유받은 URL 접속 시)
 function initRoomJoin(roomCode) {
-  const savedAdminToken = localStorage.getItem('duet_admin_' + roomCode) || '';
-  
+  // 이전에 사용하던 이름이 있다면 입력창에 기본값으로 세팅 (수정 가능하도록 노출)
   if (myUserName) {
-    // 이미 닉네임이 저장되어 있다면 자동 조인 시도
-    requestJoinRoom(roomCode, myUserName, savedAdminToken);
-  } else {
-    // 닉네임이 없으면 참가자 이름 입력 모달 표시
-    nicknameModal.style.display = 'flex';
-    nicknameInput.focus();
+    nicknameInput.value = myUserName;
   }
+  
+  // 이름을 확인 및 변경할 수 있도록 건너뛰지 않고 반드시 닉네임 입력 모달을 표시!
+  nicknameModal.style.display = 'flex';
+  setTimeout(() => {
+    nicknameInput.focus();
+    nicknameInput.select(); // 바로 수정할 수 있도록 텍스트 전체 선택
+  }, 100);
 }
 
 // 서버에 join_room 요청

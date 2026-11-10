@@ -1386,3 +1386,17 @@ select option {
 body.is-host .reset-btn {
   display: inline-flex !important;
 }
+
+/* 입장 후 이름 변경 불가 안내 배너 */
+.notice-warning-box {
+  background: rgba(255, 230, 0, 0.12);
+  border: 1px solid rgba(255, 230, 0, 0.45);
+  color: var(--neon-yellow);
+  font-size: 12px;
+  line-height: 1.5;
+  padding: 10px 14px;
+  border-radius: 10px;
+  margin-bottom: 16px;
+  text-align: left;
+  box-shadow: 0 0 15px rgba(255, 230, 0, 0.15);
+}

@@ -305,11 +305,17 @@ io.on('connection', (socket) => {
     }
   });
 
-  // 6. 대회 시작하기 (관리자 또는 참가자)
+  // 6. 대회 시작하기 (관리자 전용)
   socket.on('start_contest', () => {
     const roomCode = socketRoomMap[socket.id];
     const room = rooms[roomCode];
     if (!room) return;
+
+    const user = room.users[socket.id];
+    // 관리자(방장) 권한 확인
+    if (!user || !user.isHost) {
+      return socket.emit('error_message', '대회 시작은 관리자(방장)만 가능합니다.');
+    }
 
     if (room.teams.length === 0) {
       return socket.emit('error_message', '최소 1팀 이상 등록되어야 대회를 시작할 수 있습니다.');

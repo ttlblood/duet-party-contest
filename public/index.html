@@ -169,9 +169,16 @@
           <button id="ready-toggle-btn" class="btn btn-neon-cyan btn-large">
             준비 완료 (READY) 👍
           </button>
-          <button id="start-contest-btn" class="btn btn-neon-pink btn-large">
-            🎉 대회 시작하기!
+          
+          <!-- 관리자(방장)에게만 노출되는 대회 시작 버튼 -->
+          <button id="start-contest-btn" class="btn btn-neon-pink btn-large host-only-btn" style="display: none;">
+            🎉 [방장] 대회 시작하기!
           </button>
+
+          <!-- 일반 참가자에게 표시되는 대기 안내 문구 -->
+          <div id="guest-waiting-msg" class="guest-wait-box">
+            ⏳ 방장(관리자)이 대회를 시작할 때까지 잠시 대기해 주세요...
+          </div>
         </div>
       </section>
 

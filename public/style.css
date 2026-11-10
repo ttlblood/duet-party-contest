@@ -1400,3 +1400,27 @@ body.is-host .reset-btn {
   text-align: left;
   box-shadow: 0 0 15px rgba(255, 230, 0, 0.15);
 }
+
+/* 방장(관리자) 전용 버튼 및 게스트 대기 안내 */
+.host-only-btn {
+  display: none !important;
+}
+
+body.is-host .host-only-btn {
+  display: inline-flex !important;
+}
+
+.guest-wait-box {
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-dim);
+  padding: 14px 16px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 14px;
+  border: 1px dashed rgba(255, 255, 255, 0.18);
+  line-height: 1.5;
+}
+
+body.is-host .guest-wait-box {
+  display: none !important;
+}

@@ -19,3 +19,13 @@
 - **조치 사항**:
   1. `.view-section`에 `display: none !important;` 및 `.view-section.active`에 `display: block !important;`를 부여하여 비활성화 섹션의 완전 은닉 보장.
   2. `#countdown-view.active`에만 `display: flex !important;`가 적용되도록 수정하여 오직 10초 카운트다운 시점에만 노출되도록 버그 수정 완료.
+
+### [2026-11-10 15:08] 모바일 화면 상단 헤더 뱃지/버튼 및 미러볼 겹침 현상 수정
+- **발생 증상**:
+  - 방장 및 참가자 입장 시 상단 상태 뱃지(`LIVE`, 방코드, `👑 방장`, 닉네임)와 액션 버튼(`🔊`, `🔄 리셋`, `📱 QR`), 그리고 미러볼 조명 그래픽이 한곳에 뒤엉켜 겹치던 문제.
+- **원인 분석**:
+  - `.header-actions`가 `position: absolute; right: 15px;`로 고정된 상태에서 모바일 가로폭(360~430px) 대비 뱃지와 버튼 수가 많아 미러볼 중앙에서 요소들이 겹침.
+- **조치 사항**:
+  1. `position: absolute`를 제거하고 Flexbox 기반의 `.header-top-bar` 컨테이너 구조로 전면 개편.
+  2. `flex-wrap: wrap;`을 적용하여 좁은 모바일 화면에서도 겹침 없이 자연스럽게 줄바꿈 정렬되도록 레이아웃 개선.
+  3. 미러볼 크기 및 상단 여백을 컴팩트하게 조율하여 타이틀 및 버튼과의 겹침 완벽 해소.

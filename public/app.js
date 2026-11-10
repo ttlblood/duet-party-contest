@@ -4,8 +4,13 @@
  * 실시간 소켓 통신, Web Audio 사운드, 캔버스 컨페티, 익명 투표 및 시상식 연출
  */
 
-// Socket.io 연결
-const socket = io();
+// Socket.io 연결 및 재연결 세션 복원 지원
+const socket = io({
+  reconnection: true,
+  reconnectionAttempts: Infinity,
+  reconnectionDelay: 1000,
+  timeout: 10000
+});
 
 // 전역 클라이언트 상태
 let currentRoomCode = '';
@@ -17,6 +22,26 @@ let hasSubmittedScore = false;
 let mySelectedScore = null;
 let localViewingTeamIndex = null; // 각 사용자가 개별적으로 탭해서 둘러보는 팀 인덱스 (다른 사람 화면에 영향 없음)
 let latestRoomState = null;        // 서버에서 수신한 최신 방 상태 캐시
+
+// [모바일 환경 완벽 대응] 소켓 연결/재연결 시 세션 자동 복구 핸들러
+socket.on('connect', () => {
+  console.log('🌐 Socket.io 연결 성공 (ID:', socket.id, ')');
+  // 이미 특정 방에 입장해 있던 상태에서 모바일 슬립/화면꺼짐 등으로 재연결된 경우 세션 자동 복구
+  if (currentRoomCode && myUserName) {
+    const adminToken = localStorage.getItem(`admin_token_${currentRoomCode}`);
+    console.log(`🔄 재연결 감지: 방(${currentRoomCode}), 사용자(${myUserName}) 자동 재입장 수행`);
+    socket.emit('join_room', { roomCode: currentRoomCode, userName: myUserName, adminToken }, (res) => {
+      if (res && res.success) {
+        setHostMode(res.isHost);
+        console.log('✅ 세션 자동 복구 완료');
+      }
+    });
+  }
+});
+
+socket.on('disconnect', (reason) => {
+  console.warn('⚠️ Socket.io 연결 끊김 (사유:', reason, ')');
+});
 
 // =======================================================
 // [1] Web Audio API 기반 파티 사운드 합성기
@@ -583,13 +608,36 @@ requestScoreBtn.addEventListener('click', () => {
   if (requestScoreBtn.disabled) return;
   playClickSound();
 
-  // 현재 사용자가 화면에서 보고 있는 팀을 대상으로 점수 받기(또는 방장 재채점) 요청
-  const viewingTeam = (latestRoomState && latestRoomState.teams && localViewingTeamIndex !== null)
-    ? latestRoomState.teams[localViewingTeamIndex]
-    : null;
+  // 소켓 연결 상태 검증 (모바일 슬립 해제 등 대비)
+  if (!socket.connected) {
+    showToast('⚠️ 서버와 재연결 중입니다. 잠시 후 다시 눌러주세요.');
+    socket.connect();
+    return;
+  }
 
-  if (viewingTeam) {
-    socket.emit('request_score', { teamId: viewingTeam.id });
+  // 현재 사용자가 화면에서 보고 있는 팀을 대상으로 점수 받기(또는 방장 재채점) 요청
+  let targetTeamId = null;
+  if (latestRoomState && latestRoomState.teams) {
+    if (localViewingTeamIndex !== null && latestRoomState.teams[localViewingTeamIndex]) {
+      targetTeamId = latestRoomState.teams[localViewingTeamIndex].id;
+    } else if (latestRoomState.teams[latestRoomState.currentTeamIndex]) {
+      targetTeamId = latestRoomState.teams[latestRoomState.currentTeamIndex].id;
+    }
+  }
+
+  // 사용자 즉시 안내 피드백
+  showToast('📢 점수 받기 시작 요청을 전송했습니다...');
+
+  // 중복 광클 방지 처리 (0.8초 딜레이)
+  requestScoreBtn.disabled = true;
+  setTimeout(() => {
+    if (currentGameState && currentGameState.gameStatus === 'CONTEST') {
+      requestScoreBtn.disabled = false;
+    }
+  }, 800);
+
+  if (targetTeamId) {
+    socket.emit('request_score', { teamId: targetTeamId });
   } else {
     socket.emit('request_score');
   }

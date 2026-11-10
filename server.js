@@ -274,10 +274,20 @@ io.on('connection', (socket) => {
     // 관리자 토큰 검증
     const isHost = (adminToken && adminToken === room.adminToken) || (trimmedName === room.hostName && !Object.values(room.users).some(u => u.isHost));
 
+    // 동일 닉네임 이전 소켓 세션 승계 및 중복 정리 (모바일 재접속 완벽 대응)
+    let prevReady = isHost ? true : false;
+    for (const oldSocketId in room.users) {
+      if (oldSocketId !== socket.id && room.users[oldSocketId].name === trimmedName) {
+        prevReady = room.users[oldSocketId].isReady;
+        delete room.users[oldSocketId];
+        delete socketRoomMap[oldSocketId];
+      }
+    }
+
     room.users[socket.id] = {
       id: socket.id,
       name: trimmedName,
-      isReady: isHost ? true : false,
+      isReady: prevReady,
       isHost: isHost
     };
 
@@ -388,7 +398,18 @@ io.on('connection', (socket) => {
   socket.on('request_score', (data) => {
     const roomCode = socketRoomMap[socket.id];
     const room = rooms[roomCode];
-    if (!room || room.gameStatus !== 'CONTEST') return;
+    if (!room) {
+      console.warn(`[request_score 실패] 소켓(${socket.id})의 방 정보가 없습니다.`);
+      return socket.emit('error_message', '방 세션이 유실되었습니다. 화면을 새로고침해 주세요.');
+    }
+
+    if (room.gameStatus !== 'CONTEST') {
+      console.warn(`[request_score 실패] 방(${roomCode}) 상태가 CONTEST가 아님: ${room.gameStatus}`);
+      if (room.gameStatus === 'SCORING') {
+        return socket.emit('error_message', '이미 다른 무대의 채점이 진행 중입니다.');
+      }
+      return socket.emit('error_message', '현재 점수 받기를 진행할 수 없는 상태입니다.');
+    }
 
     // 클라이언트가 지정한 teamId를 찾거나, 없으면 기본 현재 팀 인덱스 사용
     let targetIndex = room.currentTeamIndex;
@@ -398,13 +419,24 @@ io.on('connection', (socket) => {
     }
 
     const currentTeam = room.teams[targetIndex];
-    if (!currentTeam) return;
+    if (!currentTeam) {
+      return socket.emit('error_message', '해당 무대 팀 정보를 찾을 수 없습니다.');
+    }
 
     const currentUser = room.users[socket.id];
-    if (!currentUser) return;
+    if (!currentUser) {
+      console.warn(`[request_score 실패] 소켓(${socket.id})의 유저 정보가 방(${roomCode})에 없습니다.`);
+      return socket.emit('error_message', '사용자 인증 세션이 만료되었습니다. 화면을 새로고침해 주세요.');
+    }
 
-    const isPerformer = (currentUser.name === currentTeam.member1 || currentUser.name === currentTeam.member2);
+    // 이름 공백 트림 처리로 철저한 일치 비교
+    const userName = (currentUser.name || '').trim();
+    const m1 = (currentTeam.member1 || '').trim();
+    const m2 = (currentTeam.member2 || '').trim();
+    const isPerformer = (userName === m1 || userName === m2);
     const isHost = !!currentUser.isHost;
+
+    console.log(`[request_score 시도] 방:${roomCode}, 요청자:${userName}(방장:${isHost}), 팀:${m1}&${m2}, 출연진여부:${isPerformer}`);
 
     // [권한 규칙]
     // 1) 이미 채점이 완료된 팀의 경우 -> 오직 관리자(방장)만 [점수 다시 받기] 가능!

@@ -1,0 +1,27 @@
+{
+  "name": "duet-party-contest",
+  "version": "1.0.0",
+  "description": "클럽 듀엣 노래 대회 실시간 익명 채점 파티 웹앱",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "keywords": [
+    "duet",
+    "karaoke",
+    "contest",
+    "party",
+    "socket.io"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "express": "^4.21.2",
+    "qrcode": "^1.5.4",
+    "socket.io": "^4.8.1"
+  },
+  "devDependencies": {
+    "puppeteer-core": "^25.16.0",
+    "socket.io-client": "^4.8.4"
+  }
+}

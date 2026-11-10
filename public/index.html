@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>✨ 클럽 듀엣 가요제 (Duet Party Contest) 🎤</title>
+  <!-- 구글 폰트: 파티 분위기의 감각적인 폰트 적용 -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=Noto+Sans+KR:wght@400;600;800;900&display=swap" rel="stylesheet">
+  <!-- 파티 스타일시트 -->
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- 축하 컨페티(꽃가루)를 위한 전체화면 캔버스 -->
+  <canvas id="confetti-canvas"></canvas>
+
+  <!-- 파티 분위기를 연출하는 상단 미러볼 & 스포트라이트 조명 효과 -->
+  <div class="party-lighting">
+    <div class="spotlight spotlight-left"></div>
+    <div class="spotlight spotlight-right"></div>
+    <div class="disco-ball-wrapper">
+      <div class="disco-ball-string"></div>
+      <div class="disco-ball">
+        <div class="disco-ball-reflection"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="app-container">
+    <!-- 헤더 영역: 파티 타이틀 및 현재 접속자, QR 토글 버튼 -->
+    <header class="app-header">
+      <div class="header-left">
+        <div class="live-badge"><span class="pulse-dot"></span> LIVE CONTEST</div>
+        <div class="user-badge" id="my-profile-badge">
+          <span class="user-icon">👤</span> <span id="my-name-display">접속 중...</span>
+        </div>
+      </div>
+      <h1 class="main-title">
+        <span class="neon-pink">DUET</span> <span class="neon-cyan">PARTY</span> <span class="neon-yellow">FESTA</span>
+      </h1>
+      <div class="header-actions">
+        <!-- 사운드 효과 On/Off 토글 버튼 -->
+        <button id="sound-toggle-btn" class="icon-btn" title="사운드 켜기/끄기">🔊</button>
+        <!-- 언제든 로비로 복귀/초기화할 수 있는 리셋 버튼 -->
+        <button id="global-reset-btn" class="icon-btn reset-btn" title="대회 초기화 (로비로 이동)">🔄</button>
+        <!-- QR 코드 보기 버튼 -->
+        <button id="qr-modal-btn" class="icon-btn qr-btn" title="QR 코드 열기">📱 QR</button>
+      </div>
+    </header>
+
+    <!-- 실시간 오디오 비트 이퀄라이저 그래픽 -->
+    <div class="equalizer-bar-container">
+      <div class="eq-bar"></div>
+      <div class="eq-bar"></div>
+      <div class="eq-bar"></div>
+      <div class="eq-bar"></div>
+      <div class="eq-bar"></div>
+      <div class="eq-bar"></div>
+      <div class="eq-bar"></div>
+      <div class="eq-bar"></div>
+      <div class="eq-bar"></div>
+      <div class="eq-bar"></div>
+      <div class="eq-bar"></div>
+      <div class="eq-bar"></div>
+    </div>
+
+    <!-- 메인 컨텐츠 영역 (상태별 화면 전환) -->
+    <main id="main-content">
+      
+      <!-- ============================================== -->
+      <!-- [1] 로비 뷰: 참가자 입장, 팀 등록, 레디 확인 -->
+      <!-- ============================================== -->
+      <section id="lobby-view" class="view-section active">
+        <!-- 참가자 접속 현황 카드 -->
+        <div class="card glass-card">
+          <div class="card-header">
+            <h3>👥 파티 참석자 (<span id="user-count">0</span>명)</h3>
+            <button id="populate-demo-btn" class="btn btn-small btn-demo" title="체크용 가상 10명 & 4팀 생성">
+              🎭 데모 10명 & 4팀 채우기
+            </button>
+          </div>
+          <div id="users-tag-list" class="tag-cloud">
+            <!-- 실시간 접속자 뱃지들이 동적으로 추가됨 -->
+          </div>
+        </div>
+
+        <!-- 듀엣 팀 & 곡목 등록 카드 -->
+        <div class="card glass-card form-card">
+          <div class="card-header">
+            <h3>🎤 듀엣 팀 & 곡목 등록</h3>
+            <span class="badge-tip">💡 한 사람이 여러 팀에 중복 출전 가능!</span>
+          </div>
+          <form id="team-register-form">
+            <div class="form-row">
+              <div class="form-group">
+                <label>파트너 1</label>
+                <select id="team-member-1" required>
+                  <option value="">선택하세요</option>
+                </select>
+              </div>
+              <div class="duet-plus">➕</div>
+              <div class="form-group">
+                <label>파트너 2</label>
+                <select id="team-member-2" required>
+                  <option value="">선택하세요</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-group">
+              <label>선곡 (곡목 / 노래 제목)</label>
+              <input type="text" id="team-song" placeholder="예: 그 남자 그 여자, 잔소리..." required maxlength="40">
+            </div>
+            <button type="submit" class="btn btn-party btn-block">
+              ✨ 듀엣 팀 출전 등록하기
+            </button>
+          </form>
+        </div>
+
+        <!-- 등록된 출전 팀 목록 카드 -->
+        <div class="card glass-card">
+          <div class="card-header">
+            <h3>📋 출전 팀 목록 (<span id="team-count">0</span>팀)</h3>
+          </div>
+          <div id="registered-teams-list" class="team-cards-grid">
+            <!-- 등록된 팀 카드들이 동적으로 추가됨 -->
+            <p class="empty-state">아직 등록된 듀엣 팀이 없습니다. 팀과 곡목을 등록해 주세요!</p>
+          </div>
+        </div>
+
+        <!-- 하단 액션 버튼 (레디 및 대회 시작) -->
+        <div class="lobby-action-bar">
+          <button id="ready-toggle-btn" class="btn btn-neon-cyan btn-large">
+            준비 완료 (READY) 👍
+          </button>
+          <button id="start-contest-btn" class="btn btn-neon-pink btn-large">
+            🎉 대회 시작하기!
+          </button>
+        </div>
+      </section>
+
+      <!-- ============================================== -->
+      <!-- [2] 대회 무대 및 점수 채점 뷰 -->
+      <!-- ============================================== -->
+      <section id="contest-view" class="view-section">
+        <!-- 현재 무대 정보 배너 -->
+        <div class="stage-banner">
+          <div class="round-badge" id="current-round-text">ROUND 1 / 4</div>
+          <div class="stage-neon-title">STAGE NOW</div>
+        </div>
+
+        <!-- 현재 노래 부르는 듀엣 팀 카드 -->
+        <div class="card glass-card current-performer-card">
+          <div class="music-icon-animated">🎵</div>
+          <h2 id="current-team-members" class="performer-names">철수 & 영희</h2>
+          <div class="song-title-wrapper">
+            <span class="song-label">SONG</span>
+            <span id="current-team-song" class="song-name">그 남자 그 여자</span>
+          </div>
+
+          <!-- 노래 부른 뒤 해당 팀원이 누르는 점수 받기 버튼 -->
+          <div id="request-score-box" class="action-box">
+            <p class="action-desc">노래가 끝났나요? 팀원 중 한 명이 [점수 받기]를 눌러주세요!</p>
+            <button id="request-score-btn" class="btn btn-party btn-pulse btn-large">
+              📢 노래 끝! 점수 받기 시작!
+            </button>
+          </div>
+        </div>
+
+        <!-- 채점 진행 모달/패널 (30초 카운트다운 및 점수 입력) -->
+        <div id="scoring-panel" class="scoring-overlay" style="display: none;">
+          <div class="scoring-box glass-card">
+            <!-- 30초 원형 타이머 헤더 -->
+            <div class="timer-container">
+              <div class="timer-circle">
+                <span id="scoring-timer-number" class="timer-num">30</span>
+                <span class="timer-unit">SEC</span>
+              </div>
+              <div class="timer-info">
+                <h3>실시간 익명 채점 중</h3>
+                <p>30초 내 미선택 시 <strong>5점</strong>이 자동 부여됩니다.</p>
+              </div>
+            </div>
+
+            <!-- 케이스 1: 출전 팀원 2명 화면 (대기 화면) -->
+            <div id="performer-waiting-view" class="performer-wait-box" style="display: none;">
+              <div class="wait-icon">🌟</div>
+              <h4>당신은 이 무대의 듀엣 팀원입니다!</h4>
+              <p>관객들의 익명 점수 투표가 진행되고 있습니다.<br>잠시만 두근거리는 마음으로 기다려주세요!</p>
+              <div class="loading-dots"><span></span><span></span><span></span></div>
+            </div>
+
+            <!-- 케이스 2: 일반 관객 화면 (1~10점 선택 버튼) -->
+            <div id="audience-scoring-view" class="audience-score-box">
+              <div class="score-prompt">이 듀엣 무대에 점수를 주세요!</div>
+              <div class="score-buttons-grid">
+                <button class="score-btn" data-score="1">1점</button>
+                <button class="score-btn" data-score="2">2점</button>
+                <button class="score-btn" data-score="3">3점</button>
+                <button class="score-btn" data-score="4">4점</button>
+                <button class="score-btn default-score-btn" data-score="5">
+                  <span class="score-num">5점</span>
+                  <span class="score-sub">(기본)</span>
+                </button>
+                <button class="score-btn" data-score="6">6점</button>
+                <button class="score-btn" data-score="7">7점</button>
+                <button class="score-btn" data-score="8">8점</button>
+                <button class="score-btn" data-score="9">9점</button>
+                <button class="score-btn score-btn-max" data-score="10">10점🔥</button>
+              </div>
+              <div id="score-submitted-msg" class="score-submitted" style="display: none;">
+                ✅ <span id="my-chosen-score">8</span>점 제출 완료! 다른 분들의 투표를 기다리는 중...
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 해당 팀 채점 완료 후 공개되는 점수 카드 (소수점 물음표 처리!) -->
+        <div id="stage-result-box" class="card glass-card stage-result-card" style="display: none;">
+          <div class="result-header">
+            <h3>무대 채점 완료!</h3>
+          </div>
+          <div class="masked-score-display">
+            <span class="score-label">획득 점수</span>
+            <div class="score-value">
+              <span id="masked-score-text" class="neon-yellow">8.??</span> <span class="score-unit">점</span>
+            </div>
+            <p id="score-hint-text" class="score-hint">
+              🤫 전체 팀이 끝나지 않아 소수점은 비밀입니다!
+            </p>
+          </div>
+          <!-- 다음 팀 무대로 넘어가기 버튼 -->
+          <div class="stage-nav-actions">
+            <button id="next-team-btn" class="btn btn-party btn-large">
+              다음 듀엣 팀 무대로 ➡️
+            </button>
+            <button id="reveal-final-btn" class="btn btn-neon-pink btn-pulse btn-large" style="display: none;">
+              🏆 모든 팀 종료! 최종 결과 확인하기!
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================================== -->
+      <!-- [3] 10초 역 카운트다운 뷰 -->
+      <!-- ============================================== -->
+      <section id="countdown-view" class="view-section">
+        <div class="countdown-stage">
+          <div class="countdown-glow-circle"></div>
+          <h2 class="countdown-title">최종 순위 발표까지</h2>
+          <div id="countdown-big-number" class="countdown-number">10</div>
+          <p class="countdown-sub">과연 영예의 1위 듀엣은 누구일까요?!</p>
+        </div>
+      </section>
+
+      <!-- ============================================== -->
+      <!-- [4] 최종 결과 및 시상식 뷰 -->
+      <!-- ============================================== -->
+      <section id="result-view" class="view-section">
+        <div class="results-header">
+          <div class="trophy-bounce">🏆</div>
+          <h2 class="result-title neon-yellow">최종 시상식 결과 발표</h2>
+          <p class="result-desc">모든 듀엣 팀의 정확한 최종 점수가 공개되었습니다!</p>
+        </div>
+
+        <!-- 1등, 2등, 3등 포디움 시상대 -->
+        <div id="podium-container" class="podium-wrapper">
+          <!-- 상위 3팀 포디움 카드들이 동적으로 생성됨 -->
+        </div>
+
+        <!-- 전체 순위 목록 테이블/카드 -->
+        <div class="card glass-card">
+          <div class="card-header">
+            <h3>📊 전체 순위 및 점수</h3>
+          </div>
+          <div id="full-ranking-list" class="ranking-list">
+            <!-- 전체 팀 순위 카드 동적 삽입 -->
+          </div>
+        </div>
+
+        <!-- 새로운 게임 리셋 버튼 -->
+        <div class="result-action-bar">
+          <button id="reset-contest-btn" class="btn btn-outline btn-large">
+            🔄 새로운 듀엣 대회 시작하기 (리셋)
+          </button>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <!-- ============================================== -->
+  <!-- 모달 1: 첫 입장 시 닉네임 입력 모달 -->
+  <!-- ============================================== -->
+  <div id="nickname-modal" class="modal-overlay">
+    <div class="modal-card glass-card">
+      <div class="modal-icon">🎤</div>
+      <h2>클럽 듀엣 가요제에 오신 것을 환영합니다!</h2>
+      <p>대회 참가를 위해 본인의 <strong>이름(또는 닉네임)</strong>을 입력해 주세요.</p>
+      <form id="nickname-form">
+        <input type="text" id="nickname-input" placeholder="이름을 입력하세요 (예: 지민, 태형...)" required autofocus maxlength="12">
+        <button type="submit" class="btn btn-party btn-block btn-large">
+          입장하기 🚀
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- ============================================== -->
+  <!-- 모달 2: 모바일 접속용 QR 코드 팝업 -->
+  <!-- ============================================== -->
+  <div id="qr-modal" class="modal-overlay" style="display: none;">
+    <div class="modal-card glass-card qr-card">
+      <button id="qr-close-btn" class="modal-close">&times;</button>
+      <h3>📱 스마트폰으로 접속하기</h3>
+      <p>동일한 Wi-Fi에 연결 후 스마트폰 카메라로 QR 코드를 스캔하세요!</p>
+      <div class="qr-image-wrapper">
+        <img id="qr-image" src="" alt="접속용 QR 코드">
+      </div>
+      <div class="qr-url-box">
+        <span id="qr-url-text">http://localhost:3000</span>
+        <button id="copy-url-btn" class="btn btn-small">복사</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 안내 토스트 메시지 -->
+  <div id="toast" class="toast-message"></div>
+
+  <!-- Socket.io 클라이언트 라이브러리 (서버 내장 서빙) -->
+  <script src="/socket.io/socket.io.js"></script>
+  <!-- 클라이언트 메인 스크립트 -->
+  <script src="app.js"></script>
+</body>
+</html>

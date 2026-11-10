@@ -1,0 +1,13 @@
+# 의존성 패키지
+node_modules/
+
+# 운영체제 생성 파일
+.DS_Store
+Thumbs.db
+
+# 로그 파일
+*.log
+npm-debug.log*
+
+# 임시 캡처 이미지
+*.png

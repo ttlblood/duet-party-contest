@@ -275,23 +275,27 @@ io.on('connection', (socket) => {
     socket.join(roomCode);
     socketRoomMap[socket.id] = roomCode;
 
-    // 관리자 토큰 검증
-    const isHost = (adminToken && adminToken === room.adminToken) || (trimmedName === room.hostName && !Object.values(room.users).some(u => u.isHost));
-
-    // 동일 닉네임 이전 소켓 세션 승계 및 중복 정리 (모바일 재접속 완벽 대응)
-    let prevReady = isHost ? true : false;
+    // 1. 기존 동일 닉네임의 이전 소켓 세션 확인 및 승계 정보 추출 (모바일 슬립/새로고침 대비)
+    let wasHost = false;
+    let prevReady = false;
     for (const oldSocketId in room.users) {
-      if (oldSocketId !== socket.id && room.users[oldSocketId].name === trimmedName) {
+      if (room.users[oldSocketId].name === trimmedName) {
+        if (room.users[oldSocketId].isHost) wasHost = true;
         prevReady = room.users[oldSocketId].isReady;
         delete room.users[oldSocketId];
         delete socketRoomMap[oldSocketId];
       }
     }
 
+    // 2. 관리자 토큰 검증 또는 방 개설자 닉네임 일치 검증 (방장 권한 영구 보존)
+    const hasAdminToken = !!(adminToken && adminToken === room.adminToken);
+    const isRoomCreator = (trimmedName === room.hostName);
+    const isHost = hasAdminToken || wasHost || isRoomCreator;
+
     room.users[socket.id] = {
       id: socket.id,
       name: trimmedName,
-      isReady: prevReady,
+      isReady: isHost ? true : prevReady,
       isHost: isHost
     };
 
@@ -301,7 +305,8 @@ io.on('connection', (socket) => {
         roomCode,
         isHost,
         title: room.title,
-        hostName: room.hostName
+        hostName: room.hostName,
+        adminToken: isHost ? room.adminToken : null
       });
     }
 

@@ -30,12 +30,16 @@ socket.on('connect', () => {
   console.log('🌐 Socket.io 연결 성공 (ID:', socket.id, ')');
   // 이미 특정 방에 입장해 있던 상태에서 모바일 슬립/화면꺼짐 등으로 재연결된 경우 세션 자동 복구
   if (currentRoomCode && myUserName) {
-    const adminToken = localStorage.getItem(`admin_token_${currentRoomCode}`);
+    const adminToken = localStorage.getItem(`duet_admin_${currentRoomCode}`) || localStorage.getItem(`admin_token_${currentRoomCode}`);
     console.log(`🔄 재연결 감지: 방(${currentRoomCode}), 사용자(${myUserName}) 자동 재입장 수행`);
     socket.emit('join_room', { roomCode: currentRoomCode, userName: myUserName, adminToken }, (res) => {
       if (res && res.success) {
         setHostMode(res.isHost);
-        console.log('✅ 세션 자동 복구 완료');
+        if (res.adminToken) {
+          localStorage.setItem(`duet_admin_${res.roomCode}`, res.adminToken);
+          localStorage.setItem(`admin_token_${res.roomCode}`, res.adminToken);
+        }
+        console.log('✅ 세션 자동 복구 완료 (방장 여부:', res.isHost, ')');
       }
     });
   }
@@ -358,17 +362,24 @@ function checkInitialRoute() {
 
 // 방 입장 처리 함수 (공유받은 URL 접속 및 새로고침/재접속 시)
 function initRoomJoin(roomCode) {
-  const adminToken = localStorage.getItem(`admin_token_${roomCode}`) || localStorage.getItem(`duet_admin_${roomCode}`);
+  const adminToken = localStorage.getItem(`duet_admin_${roomCode}`) || localStorage.getItem(`admin_token_${roomCode}`);
+  const savedNameInThisRoom = localStorage.getItem(`duet_member_${roomCode}`);
 
-  // [사용자 요구 반영] 이미 본인 이름을 정한 멤버가 재접속하거나 새로고침할 때는 이름 정하는 화면을 절대 띄우지 않고 자동 직행!
-  if (myUserName && myUserName.trim()) {
+  // [사용자 요구 반영] 이 방에 이미 참가한 이력이 있는 멤버만 새로고침/재접속 시 모달 없이 자동 직행!
+  if (savedNameInThisRoom && savedNameInThisRoom.trim()) {
+    myUserName = savedNameInThisRoom.trim();
     nicknameModal.style.display = 'none';
-    requestJoinRoom(roomCode, myUserName.trim(), adminToken);
+    requestJoinRoom(roomCode, myUserName, adminToken);
     return;
   }
 
-  // 본인 이름이 없는 최초 방문자에게만 닉네임 입력 모달 노출
+  // 이 방에 처음 입장하는 참가자는 무조건 닉네임 입력 모달을 거치도록 강제
+  myUserName = '';
   nicknameModal.style.display = 'flex';
+  
+  // 이전에 입력해둔 이름이 있다면 편의상 인풋 초기값으로만 채워둠 (그대로 확인 누르거나 수정 가능)
+  const prevGlobalName = localStorage.getItem('duet_user_name') || '';
+  nicknameInput.value = prevGlobalName;
   setTimeout(() => {
     nicknameInput.focus();
     nicknameInput.select();
@@ -389,7 +400,16 @@ function requestJoinRoom(roomCode, userName, adminToken) {
 
     currentRoomCode = res.roomCode;
     myUserName = userName;
+
+    // 방별 참여 닉네임 및 전역 최근 닉네임 영구 저장
     localStorage.setItem('duet_user_name', myUserName);
+    localStorage.setItem(`duet_member_${res.roomCode}`, myUserName);
+
+    // 관리자(방장) 토큰 영구 저장 보존
+    if (res.adminToken) {
+      localStorage.setItem(`duet_admin_${res.roomCode}`, res.adminToken);
+      localStorage.setItem(`admin_token_${res.roomCode}`, res.adminToken);
+    }
 
     // 헤더 상태 갱신
     roomCodeDisplay.textContent = currentRoomCode;
@@ -475,7 +495,9 @@ createRoomForm.addEventListener('submit', (e) => {
     currentRoomCode = res.roomCode;
     myUserName = res.hostName;
     localStorage.setItem('duet_user_name', myUserName);
-    localStorage.setItem('duet_admin_' + res.roomCode, res.adminToken);
+    localStorage.setItem(`duet_member_${res.roomCode}`, myUserName);
+    localStorage.setItem(`duet_admin_${res.roomCode}`, res.adminToken);
+    localStorage.setItem(`admin_token_${res.roomCode}`, res.adminToken);
 
     // URL을 6자리 방 경로로 갱신 (예: /aB3k9X)
     window.history.pushState(null, '', '/' + currentRoomCode);
@@ -512,7 +534,7 @@ nicknameForm.addEventListener('submit', (e) => {
   const name = nicknameInput.value.trim();
   if (!name) return;
 
-  const savedAdminToken = localStorage.getItem('duet_admin_' + currentRoomCode) || '';
+  const savedAdminToken = localStorage.getItem('duet_admin_' + currentRoomCode) || localStorage.getItem('admin_token_' + currentRoomCode) || '';
   initAudio();
   playClickSound();
   requestJoinRoom(currentRoomCode, name, savedAdminToken);
@@ -1180,6 +1202,8 @@ function renderContestStage(teams, officialTeamIndex, gameStatus) {
   const allTeamsFinished = teams.every(t => t.status === 'scored');
 
   if (gameStatus === 'SCORING') {
+    if (requestScoreBox) requestScoreBox.style.display = 'none';
+    if (karaokeScoreActionBox) karaokeScoreActionBox.style.display = 'none';
     scoringPanel.style.display = 'block';
     stageResultBox.style.display = 'none';
 
